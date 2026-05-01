@@ -1,0 +1,42 @@
+{
+  "name": "@tokensmart/gateway",
+  "version": "0.0.1",
+  "description": "TokSuan proxy gateway — records and budgets every LLM call",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "start": "bun run src/index.ts",
+    "set-budget": "bun run scripts/set-budget.ts",
+    "set-routing": "bun run scripts/set-routing.ts",
+    "set-alert": "bun run scripts/set-alert.ts",
+    "rotate-master-key": "bun run scripts/rotate-master-key.ts",
+    "migrate-to-kms": "bun run scripts/migrate-to-kms.ts",
+    "check-pricing-freshness": "bun run scripts/check-pricing-freshness.ts",
+    "refresh-pricing": "bun run scripts/refresh-pricing.ts",
+    "poll-upstream-catalogs": "bun run scripts/poll-upstream-catalogs.ts",
+    "send-anon-telemetry": "bun run scripts/send-anon-telemetry.ts",
+    "backfill-routing-savings": "bun run scripts/backfill-routing-savings.ts",
+    "retrain-project": "bun run scripts/retrain-project.ts",
+    "train-embedding-classifier": "bun run scripts/train-embedding-classifier.ts",
+    "smoke:learning-pipeline": "bun run scripts/smoke-learning-pipeline.ts",
+    "smoke:features": "bun run scripts/smoke-features.ts",
+    "build": "bun build src/index.ts --target=bun --splitting --outdir=dist",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "e2e": "bun run scripts/e2e-verify.ts",
+    "e2e:pg": "bun run scripts/e2e-verify-pg.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kms": "^3.1034.0",
+    "@google-cloud/kms": "^5.4.0",
+    "hono": "^4.6.0",
+    "postgres": "^3.4.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  // Copy this shape into your OpenClaw provider config and adjust field names
+  // to match your OpenClaw version.
+  //
+  // Hosted TokSuan:
+  //   base_url: "https://gateway.tokensmt.com/v1"
+  //
+  // Local self-host:
+  //   base_url: "http://localhost:8787/v1"
+  "providers": {
+    "openai": {
+      "base_url": "http://localhost:8787/v1",
+      "api_key": "ts_your_project_key_here"
+    }
+  },
+  "agent": {
+    "model": "gpt-4o"
+  },
+  "headers": {
+    "x-ts-agent": "openclaw",
+    "x-ts-channel": "cli"
+  }
+}

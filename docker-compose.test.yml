@@ -1,0 +1,32 @@
+# TokenSmart — local integration test dependencies.
+#
+# Only needed to exercise the real AWS SDK code paths (KmsKeyProvider)
+# without a real AWS account. `bun test` skips localstack-gated test
+# suites automatically when the service isn't reachable.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d localstack
+#   ./scripts/test-setup-localstack.sh       # creates a CMK, echoes ARN
+#   cd apps/gateway && bun test              # all suites incl. LocalStack
+#   docker compose -f docker-compose.test.yml down
+#
+# The LocalStack community image is free, self-contained, and requires no
+# AWS credentials (use dummy `test/test`). It emulates enough of KMS's
+# API surface that GenerateDataKey + Decrypt behave like the real thing.
+
+services:
+  localstack:
+    image: localstack/localstack:3
+    container_name: tokensmart-localstack
+    restart: unless-stopped
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: kms
+      DEBUG: "0"
+      PERSISTENCE: "0"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

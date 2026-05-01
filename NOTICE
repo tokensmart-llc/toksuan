@@ -1,0 +1,42 @@
+TokSuan
+Copyright 2026 TokenSmart LLC
+
+This product includes software developed at TokenSmart LLC.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may
+not use this file except in compliance with the License. You may obtain
+a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+---
+
+A note from the maintainer:
+
+TokSuan is open-source under Apache-2.0 — you can use, modify, and
+self-host the software for any purpose, commercial or otherwise, without
+asking permission. The patent grant in §3 of the License gives you
+explicit protection.
+
+What we ask in return (no legal force, just social):
+
+  - If you're a research project, indie developer, or self-hoster:
+    use it freely. Star the repo if it's useful, file an issue if
+    something's broken.
+
+  - If you're a company that derives material commercial value from
+    running TokSuan in production, please consider subscribing to
+    the hosted plan at https://tokensmt.com — it's how we fund continued
+    development.
+
+  - If you're a SaaS competitor planning to re-host TokSuan as a paid
+    product: that is technically permitted by Apache-2.0. We'd much
+    rather you contribute back upstream and we co-develop. Start a
+    GitHub Discussion before you do something we'll both regret.
+
+These are aspirations, not license terms. The Apache-2.0 text above is
+the full and only legally binding agreement.

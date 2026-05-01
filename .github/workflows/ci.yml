@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install gateway dependencies
+        working-directory: apps/gateway
+        run: bun install
+
+      - name: Typecheck gateway
+        working-directory: apps/gateway
+        run: bun run typecheck
+
+      - name: Install dashboard dependencies
+        working-directory: apps/dashboard
+        run: bun install
+
+      - name: Typecheck dashboard
+        working-directory: apps/dashboard
+        env:
+          DATABASE_URL: postgres://tokensmart:tokensmart_dev@localhost:5432/tokensmart
+        run: bun run typecheck
+
+  smoke-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install gateway dependencies
+        working-directory: apps/gateway
+        run: bun install
+
+      - name: Run sqlite-safe gateway tests
+        working-directory: apps/gateway
+        env:
+          DATABASE_URL: :memory:
+          OPENAI_API_KEY: sk-test-fixture
+        run: |
+          bun test \
+            test/budget.test.ts \
+            test/cache.test.ts \
+            test/classifier.test.ts \
+            test/failover.test.ts \
+            test/pricing-loader.test.ts \
+            test/request-body-storage.test.ts \
+            test/routing-decision-headers.test.ts \
+            test/tags.test.ts \
+            test/templates.test.ts

@@ -1,0 +1,146 @@
+# TokenSmart — production compose file.
+#
+# Usage:
+#   cp .env.prod.example .env.prod
+#   # edit .env.prod: set POSTGRES_PASSWORD + your upstream *_API_KEY vars
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# This is the same stack as local dev, but with:
+#   - POSTGRES_PASSWORD pulled from env (not the dev default)
+#   - Gateway + dashboard built from Dockerfiles (not run via bun run dev)
+#   - pgweb intentionally omitted — don't expose it to the public internet
+#   - Restart policies + healthchecks
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tokensmart-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tokensmart}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-tokensmart}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tokensmart} -d ${POSTGRES_DB:-tokensmart}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gateway:
+    build:
+      context: ./apps/gateway
+      dockerfile: Dockerfile
+    container_name: tokensmart-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${GATEWAY_PORT:-8787}:8787"
+    # Migrations dir is mounted (not COPY'd into the image) so adding a
+    # migration is "edit a SQL file + restart the gateway", no rebuild.
+    # The gateway's runPendingMigrations() applies pending ones at boot.
+    volumes:
+      - ./migrations:/app/migrations:ro
+    environment:
+      PORT: 8787
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-tokensmart}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tokensmart}
+      # Gateway reads this to decide whether to mint a bootstrap API
+      # key when the DB is empty. Auth-on prod (the default) expects
+      # users to sign up via the dashboard; auth-off single-tenant
+      # prod gets a one-time bootstrap key printed to gateway logs.
+      TOKENSMART_AUTH_ENABLED: ${TOKENSMART_AUTH_ENABLED:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-}
+      DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
+      DOUBAO_BASE_URL: ${DOUBAO_BASE_URL:-}
+      # BYO provider key crypto. MUST match the dashboard value EXACTLY.
+      # Empty = BYO disabled (the gateway falls back to env-provider keys
+      # above). For real multi-tenant prod, set one of:
+      #   TOKENSMART_PROVIDER_KEY_ENCRYPTION (env master key, fine for
+      #     single-host prod — generate with `openssl rand -hex 32`)
+      #   TOKENSMART_KMS_KEY_ARN            (AWS KMS envelope encryption)
+      #   TOKENSMART_GCP_KMS_KEY_NAME       (GCP KMS envelope encryption)
+      TOKENSMART_PROVIDER_KEY_ENCRYPTION: ${TOKENSMART_PROVIDER_KEY_ENCRYPTION:-}
+      TOKENSMART_KMS_KEY_ARN: ${TOKENSMART_KMS_KEY_ARN:-}
+      TOKENSMART_GCP_KMS_KEY_NAME: ${TOKENSMART_GCP_KMS_KEY_NAME:-}
+      # Shared secret for the dashboard -> gateway internal replay endpoint.
+      # Unset = replay UI shows a setup hint instead of a broken form.
+      TOKENSMART_INTERNAL_TOKEN: ${TOKENSMART_INTERNAL_TOKEN:-}
+      # Optional OpenTelemetry span export (Langfuse / Datadog / Tempo / etc.)
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # CORS allowlist — comma-separated Origin URLs. Unset = off. Use
+      # "*" for unrestricted browser access, or a specific list for
+      # hosted deployments that need to accept client-side fetches.
+      TOKENSMART_CORS_ALLOW_ORIGINS: ${TOKENSMART_CORS_ALLOW_ORIGINS:-}
+      # Max request body size (bytes). Default 10 MiB protects against
+      # OOM from malicious oversized payloads. Raise for vision-heavy
+      # workloads that inline large base64 images.
+      TOKENSMART_MAX_BODY_BYTES: ${TOKENSMART_MAX_BODY_BYTES:-}
+
+  dashboard:
+    build:
+      context: ./apps/dashboard
+      dockerfile: Dockerfile
+    container_name: tokensmart-dashboard
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-tokensmart}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tokensmart}
+      # Default prod is multi-tenant auth-on — a no-auth prod box has no
+      # UI path to mint API keys (the gateway will print a bootstrap key
+      # on first boot, see gateway logs). Set explicitly to "0" to opt
+      # into single-tenant mode.
+      TOKENSMART_AUTH_ENABLED: ${TOKENSMART_AUTH_ENABLED:-1}
+      # Marks the dashboard as the hosted SaaS instance at tokensmt.com
+      # — drives copy branching ("add key via Settings" vs "edit env
+      # file"), suppresses the self-host encryption-key warning, etc.
+      # Leave unset on self-hosted installs.
+      TOKENSMART_HOSTED_MODE: ${TOKENSMART_HOSTED_MODE:-}
+      # Where the dashboard tells users to POST their chat completions.
+      # Unset falls back to http://localhost:8787 — OK for dev, wrong
+      # for any prod install accessed over the network.
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-}
+      GATEWAY_URL: ${GATEWAY_URL:-http://gateway:8787}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
+      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
+      STRIPE_PRICE_SCALE: ${STRIPE_PRICE_SCALE:-}
+      STRIPE_PRICE_PRO_ANNUAL: ${STRIPE_PRICE_PRO_ANNUAL:-}
+      STRIPE_PRICE_TEAM_ANNUAL: ${STRIPE_PRICE_TEAM_ANNUAL:-}
+      STRIPE_PRICE_SCALE_ANNUAL: ${STRIPE_PRICE_SCALE_ANNUAL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-}
+      # MUST be IDENTICAL to the gateway's TOKENSMART_PROVIDER_KEY_ENCRYPTION.
+      # Both processes need the same master key to encrypt / decrypt
+      # the user_provider_keys rows.
+      TOKENSMART_PROVIDER_KEY_ENCRYPTION: ${TOKENSMART_PROVIDER_KEY_ENCRYPTION:-}
+      TOKENSMART_KMS_KEY_ARN: ${TOKENSMART_KMS_KEY_ARN:-}
+      TOKENSMART_GCP_KMS_KEY_NAME: ${TOKENSMART_GCP_KMS_KEY_NAME:-}
+      # Shared secret for the /requests/[id] Replay button. Same value
+      # as the gateway's TOKENSMART_INTERNAL_TOKEN.
+      TOKENSMART_INTERNAL_TOKEN: ${TOKENSMART_INTERNAL_TOKEN:-}
+      # Public documentation base URL (README + integration guides).
+      # Default points at the GitHub repo; override if you host the
+      # docs yourself.
+      NEXT_PUBLIC_DOCS_URL: ${NEXT_PUBLIC_DOCS_URL:-}
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-http://localhost:3000}
+
+volumes:
+  postgres-data:

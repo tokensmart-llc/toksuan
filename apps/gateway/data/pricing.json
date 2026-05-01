@@ -1,0 +1,310 @@
+{
+  "$schema": "./pricing.schema.json",
+  "generated_at": "2026-04-26",
+  "notes": "Source of truth for model pricing. Refresh via `bun run refresh-pricing` (or edit by hand and bump last_verified_at). The gateway loads this at boot and falls back to a baked-in subset only when the file is missing or invalid. See apps/gateway/src/pricing.ts.",
+  "entries": [
+    {
+      "provider": "anthropic",
+      "model": "claude-3-5-haiku-latest",
+      "inputUsdPerM": 0.8,
+      "outputUsdPerM": 4.0,
+      "cachedInputUsdPerM": 0.08,
+      "source_url": "https://www.anthropic.com/pricing#anthropic-api",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-latest",
+      "inputUsdPerM": 3.0,
+      "outputUsdPerM": 15.0,
+      "cachedInputUsdPerM": 0.3,
+      "source_url": "https://www.anthropic.com/pricing#anthropic-api",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-3-7-sonnet-latest",
+      "inputUsdPerM": 3.0,
+      "outputUsdPerM": 15.0,
+      "cachedInputUsdPerM": 0.3,
+      "source_url": "https://www.anthropic.com/pricing#anthropic-api",
+      "last_verified_at": "2026-04-23",
+      "notes": "Same headline price as 3.5 Sonnet (Feb 2025)."
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "inputUsdPerM": 1.0,
+      "outputUsdPerM": 5.0,
+      "cachedInputUsdPerM": 0.1,
+      "source_url": "https://www.anthropic.com/pricing#anthropic-api",
+      "last_verified_at": "2026-04-26",
+      "notes": "Claude Haiku 4.5 standard API pricing."
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "inputUsdPerM": 5.0,
+      "outputUsdPerM": 25.0,
+      "cachedInputUsdPerM": 0.5,
+      "source_url": "https://www.anthropic.com/pricing#anthropic-api",
+      "last_verified_at": "2026-04-26",
+      "notes": "Opus 4.7 standard pricing; cached input read price represented by cachedInputUsdPerM."
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5-20250929",
+      "inputUsdPerM": 3.0,
+      "outputUsdPerM": 15.0,
+      "cachedInputUsdPerM": 0.3,
+      "source_url": "https://www.anthropic.com/pricing#anthropic-api",
+      "last_verified_at": "2026-04-26",
+      "notes": "Claude Sonnet 4.5 standard API pricing."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "inputUsdPerM": 0.27,
+      "outputUsdPerM": 1.1,
+      "cachedInputUsdPerM": 0.07,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-reasoner",
+      "inputUsdPerM": 0.55,
+      "outputUsdPerM": 2.19,
+      "cachedInputUsdPerM": 0.14,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "inputUsdPerM": 0.14,
+      "outputUsdPerM": 0.28,
+      "cachedInputUsdPerM": 0.028,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "last_verified_at": "2026-04-26",
+      "notes": "Cache-miss input and output rates; cachedInputUsdPerM uses cache-hit input rate."
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "inputUsdPerM": 1.74,
+      "outputUsdPerM": 3.48,
+      "cachedInputUsdPerM": 0.145,
+      "source_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "last_verified_at": "2026-04-26",
+      "notes": "Cache-miss input and output rates; cachedInputUsdPerM uses cache-hit input rate."
+    },
+    {
+      "provider": "doubao",
+      "model": "doubao-pro-4k",
+      "inputUsdPerM": 0.11,
+      "outputUsdPerM": 0.41,
+      "source_url": "https://www.volcengine.com/docs/82379/1099320",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "doubao",
+      "model": "doubao-seed-2-0-code-preview-260215",
+      "inputUsdPerM": 0.57,
+      "outputUsdPerM": 2.85,
+      "source_url": "https://www.volcengine.com/docs/82379/1587798",
+      "last_verified_at": "2026-04-26"
+    },
+    {
+      "provider": "doubao",
+      "model": "doubao-seed-2-0-lite-260215",
+      "inputUsdPerM": 0.14,
+      "outputUsdPerM": 0.71,
+      "source_url": "https://www.volcengine.com/docs/82379/1587798",
+      "last_verified_at": "2026-04-26"
+    },
+    {
+      "provider": "doubao",
+      "model": "doubao-seed-2-0-mini-260215",
+      "inputUsdPerM": 0.07,
+      "outputUsdPerM": 0.28,
+      "source_url": "https://www.volcengine.com/docs/82379/1587798",
+      "last_verified_at": "2026-04-26"
+    },
+    {
+      "provider": "doubao",
+      "model": "doubao-seed-2-0-pro-260215",
+      "inputUsdPerM": 0.47,
+      "outputUsdPerM": 2.37,
+      "source_url": "https://www.volcengine.com/docs/82379/1587798",
+      "last_verified_at": "2026-04-26"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-2.5-flash",
+      "inputUsdPerM": 0.3,
+      "outputUsdPerM": 2.5,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-2.5-flash-lite",
+      "inputUsdPerM": 0.1,
+      "outputUsdPerM": 0.4,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "last_verified_at": "2026-04-23",
+      "notes": "Public Google Gemini API model. Prices mirror the baseline benchmark rate used for the public policy artifact."
+    },
+    {
+      "provider": "google",
+      "model": "gemini-2.5-pro",
+      "inputUsdPerM": 1.25,
+      "outputUsdPerM": 10.0,
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-3.5-turbo",
+      "inputUsdPerM": 0.5,
+      "outputUsdPerM": 1.5,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4-turbo",
+      "inputUsdPerM": 10.0,
+      "outputUsdPerM": 30.0,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "inputUsdPerM": 2.5,
+      "outputUsdPerM": 10.0,
+      "cachedInputUsdPerM": 1.25,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23",
+      "notes": "OpenAI caches prompts >= 1024 tokens automatically and bills cached tokens at 50% of input rate."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "inputUsdPerM": 0.15,
+      "outputUsdPerM": 0.6,
+      "cachedInputUsdPerM": 0.075,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.2",
+      "inputUsdPerM": 3.0,
+      "outputUsdPerM": 15.0,
+      "cachedInputUsdPerM": 1.5,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23",
+      "notes": "Approximate per OpenAI's March 2026 pricing sheet."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "inputUsdPerM": 5.0,
+      "outputUsdPerM": 30.0,
+      "cachedInputUsdPerM": 2.5,
+      "source_url": "https://platform.openai.com/docs/pricing?latest-pricing=standard",
+      "last_verified_at": "2026-04-26",
+      "notes": "Standard API pricing cross-checked against April 2026 GPT-5.5 release summaries."
+    },
+    {
+      "provider": "openai",
+      "model": "o1-mini",
+      "inputUsdPerM": 3.0,
+      "outputUsdPerM": 12.0,
+      "cachedInputUsdPerM": 1.5,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "openai",
+      "model": "o1-preview",
+      "inputUsdPerM": 15.0,
+      "outputUsdPerM": 60.0,
+      "cachedInputUsdPerM": 7.5,
+      "source_url": "https://openai.com/api/pricing/",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "openai",
+      "model": "o4-mini",
+      "inputUsdPerM": 1.1,
+      "outputUsdPerM": 4.4,
+      "cachedInputUsdPerM": 0.275,
+      "source_url": "https://platform.openai.com/docs/pricing?latest-pricing=standard",
+      "last_verified_at": "2026-04-26"
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen-max",
+      "inputUsdPerM": 1.6,
+      "outputUsdPerM": 6.4,
+      "source_url": "https://help.aliyun.com/zh/model-studio/getting-started/models",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen-plus",
+      "inputUsdPerM": 0.4,
+      "outputUsdPerM": 1.2,
+      "source_url": "https://help.aliyun.com/zh/model-studio/getting-started/models",
+      "last_verified_at": "2026-04-23"
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3-coder-plus",
+      "inputUsdPerM": 0.65,
+      "outputUsdPerM": 3.25,
+      "source_url": "https://help.aliyun.com/zh/model-studio/qwen3-coder-plus-price-drop",
+      "last_verified_at": "2026-04-26"
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3-next-80b-a3b-instruct",
+      "inputUsdPerM": 0.5,
+      "outputUsdPerM": 2.0,
+      "source_url": "https://help.aliyun.com/zh/model-studio/getting-started/models",
+      "last_verified_at": "2026-04-23",
+      "notes": "Approximate DashScope price. MoE 80B with 3B active."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3-next-80b-a3b-thinking",
+      "inputUsdPerM": 0.5,
+      "outputUsdPerM": 2.0,
+      "source_url": "https://help.aliyun.com/zh/model-studio/getting-started/models",
+      "last_verified_at": "2026-04-26",
+      "notes": "Approximate DashScope price; matched to qwen3-next-80b-a3b-instruct pending a separate thinking rate card."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3.6-flash",
+      "inputUsdPerM": 0.1,
+      "outputUsdPerM": 0.4,
+      "source_url": "https://docs.qwencloud.com/developer-guides/getting-started/pricing",
+      "last_verified_at": "2026-04-26",
+      "notes": "Approximate until a qwen3.6-flash-specific public rate appears; based on Qwen flash / Qwen3.5 Flash public pricing."
+    },
+    {
+      "provider": "qwen",
+      "model": "qwen3.6-plus",
+      "inputUsdPerM": 0.276,
+      "outputUsdPerM": 1.651,
+      "source_url": "https://docs.qwencloud.com/developer-guides/getting-started/pricing",
+      "last_verified_at": "2026-04-26",
+      "notes": "DashScope/Qwen Cloud international tier under 256K context."
+    }
+  ]
+}

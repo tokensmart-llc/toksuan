@@ -1,0 +1,41 @@
+{
+  "name": "@tokensmart/dashboard",
+  "version": "0.0.1",
+  "description": "TokSuan dashboard — receipts, budgets, and optimization controls",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "send-weekly-savings": "bun run scripts/send-weekly-savings.ts",
+    "settle-referrals": "bun run scripts/settle-referrals.ts",
+    "smoke-stripe-webhook": "bun run scripts/smoke-stripe-webhook.ts",
+    "sweep-expired-api-keys": "bun run scripts/sweep-expired-api-keys.ts",
+    "backfill-learning-enabled": "bun run scripts/backfill-learning-enabled.ts",
+    "sweep-deleted-users": "bun run scripts/sweep-deleted-users.ts",
+    "sweep-old-requests": "bun run scripts/sweep-old-requests.ts",
+    "sweep-expired-auth": "bun run scripts/sweep-expired-auth.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@aws-sdk/client-kms": "^3.1034.0",
+    "@google-cloud/kms": "^5.4.0",
+    "@xmldom/xmldom": "^0.8.10",
+    "next": "15.0.7",
+    "postgres": "^3.4.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "resend": "^4.0.1",
+    "samlify": "^2.10.1",
+    "stripe": "^17.5.0",
+    "xml-crypto": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.6.3"
+  }
+}

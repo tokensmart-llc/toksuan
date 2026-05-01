@@ -1,0 +1,45 @@
+# Drop-in fragment for ~/.hermes/config.yaml
+#
+# Routes Hermes-Agent's LLM calls through TokSuan instead of straight
+# at OpenAI/Anthropic/etc. Hermes' built-in `provider: custom` flow is
+# the path the project documents for any OpenAI-compatible endpoint
+# (see https://hermes-agent.nousresearch.com/docs/integrations/providers).
+#
+# Hosted TokSuan:
+#   base_url: https://gateway.tokensmt.com/v1
+# Local self-host:
+#   base_url: http://localhost:8787/v1
+#
+# Put the API key in ~/.hermes/.env so it never lands in config.yaml:
+#   TOKENSMART_API_KEY=ts_your_project_key_here
+#
+# (Hermes' .env is for SECRETS only — see "Configuration Precedence" in
+# the user-guide. `key_env` is the documented way around the known
+# `provider: custom` + `api_key:` bug from issue #12239.)
+
+model:
+  default: gpt-4o            # any model TokSuan can resolve
+  provider: custom
+  base_url: http://localhost:8787/v1
+  key_env: TOKENSMART_API_KEY
+
+# Optional: register TokSuan as a NAMED custom provider so you can
+# switch between TokSuan and a direct upstream mid-session via
+# Hermes' `<provider>:<model>` triple syntax. Keep `model:` above as
+# your default; this just lets `/model tokensmart:gpt-4o` work too.
+custom_providers:
+  - name: tokensmart
+    base_url: http://localhost:8787/v1
+    key_env: TOKENSMART_API_KEY
+    api_mode: chat_completions
+
+# Optional: arrange a free safety net. If the primary call fails (429,
+# 5xx, auth blip), Hermes swaps to the fallback once per session.
+# Pointing it at TokSuan too means the fallback also gets routing,
+# loop detection, and the request ledger.
+#
+# fallback_model:
+#   provider: custom
+#   model: gpt-4o-mini
+#   base_url: http://localhost:8787/v1
+#   key_env: TOKENSMART_API_KEY

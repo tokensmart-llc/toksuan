@@ -1,0 +1,77 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Bun
+bun.lock
+.bun/
+
+# Environment
+.env
+.env.local
+.env.demo
+.env.prod
+.env.*.local
+!.env.example
+!.env.prod.example
+
+# Database
+*.db
+*.sqlite
+postgres-data/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local third-party checkouts / benchmark sandboxes
+/openclaw/
+/openclaw-bench/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+.cache/
+.turbo/
+.vercel/
+.localstack-kms.env
+
+# Internal notes and planning docs (not part of the public release)
+docs/STATE.md
+docs/archive/
+docs/icebox/
+docs/marketing/
+docs/commitment.md
+docs/positioning.md
+docs/vision-long-term.md
+docs/pricing-discounts.md
+
+# Cloud-only infra (deployment manifests, secrets, runbooks).
+# This directory is intentionally not committed — it carries the
+# production deployment that's only relevant to the hosted SaaS,
+# not to anyone running TokenSmart self-hosted from this checkout.
+infra/
