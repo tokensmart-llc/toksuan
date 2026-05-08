@@ -1,20 +1,45 @@
 # TokSuan
 
-> **Spend control and routing for AI agents.**
-> Make every agent turn visible, cap runaway spend, and route to cheaper models
+> **AI spend control and routing for agents.**
+> See every model call, cap runaway spend, and route easy work to cheaper models
 > only when the receipt proves the trade worked.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
 [![Made for agents](https://img.shields.io/badge/made%20for-AI%20agents-purple.svg)](#why-toksuan)
+[![Website](https://img.shields.io/badge/website-tokensmt.com-0A66C2.svg)](https://tokensmt.com)
 
-TokSuan is operated by TokenSmart LLC and sits between your agent and upstream
-model providers. It keeps the OpenAI-compatible API shape your tools already
-use, then adds spend receipts, budgets, loop protection, and evidence-based
-routing.
-It is not a cheap-model proxy: simple turns can route to fast inexpensive
-models, hard/frontier turns keep high-quality models unless there is strong
-evidence to switch, and each project's real traffic improves future routing.
+![TokSuan tutorial screenshot](docs/assets/toksuan-tutorial.png)
+
+TokSuan is operated by TokenSmart LLC and sits between your agents and upstream
+model providers. Keep the OpenAI-compatible request shape your tools already
+use, then add spend receipts, project budgets, loop protection, and
+evidence-based routing.
+
+The core idea is simple: **See it. Cap it. Shrink it.** TokSuan is not a
+cheap-model proxy. Simple turns can route to fast inexpensive models, while
+hard/frontier turns keep high-quality models unless your own traffic proves a
+safe downgrade.
+
+## Watch The Tutorial
+
+The short tutorial shows the hosted flow end to end: bring your own provider
+key, create a TokSuan project key, send an agent request, inspect the receipt,
+and understand how routing can reduce agent spend.
+
+- [Watch on LinkedIn](https://www.linkedin.com/posts/pichao-wang-494773109_aiagents-llmops-aiinfrastructure-ugcPost-7458333083977547776-lwl2?utm_source=share&utm_medium=member_desktop&rcm=ACoAABtX8fABVkgbF_NMGobvnhN-MyxYrmY4wGE)
+- [Watch on YouTube](https://youtu.be/ndWhjo64d-g)
+- [Watch on Bilibili](https://www.bilibili.com/video/BV1baduBmELn/?spm_id_from=333.1387.homepage.video_card.click&vd_source=5fa8c3c626a489f11a0110ba86ed17f5)
+
+## Four Steps, No Agent Rewrite
+
+1. Add the provider key you already use, such as OpenAI, Anthropic, Google
+   Gemini, DeepSeek, Qwen, or Doubao.
+2. Create a TokSuan project and copy its `ts_...` project key.
+3. Point your agent or SDK to `https://gateway.tokensmt.com/v1` as the
+   OpenAI-compatible `base_url`.
+4. Inspect the dashboard receipt for cost, latency, token usage, budget checks,
+   and any routing decision.
 
 ```bash
 curl https://gateway.tokensmt.com/v1/chat/completions \
