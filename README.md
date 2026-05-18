@@ -10,6 +10,8 @@
 
 English | [中文](README.zh-CN.md)
 
+![TokSuan tutorial screenshot](docs/assets/toksuan-tutorial.png)
+
 TokSuan is operated by TokenSmart LLC and sits between your agent and upstream
 model providers. It keeps the OpenAI-compatible API shape your tools already
 use, then adds spend receipts, budgets, loop protection, and evidence-based

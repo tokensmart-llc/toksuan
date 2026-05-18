@@ -10,6 +10,8 @@
 
 [English](README.md) | 中文
 
+![TokSuan 教程截图](docs/assets/toksuan-tutorial.png)
+
 TokSuan 由 TokenSmart LLC 运营，位于你的 agent 和上游模型提供商之间。
 它保持工具已经兼容的 OpenAI API 形状，同时增加花费回执、预算、循环
 保护和基于证据的模型路由。
