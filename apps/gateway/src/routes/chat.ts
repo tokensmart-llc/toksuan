@@ -65,6 +65,53 @@ import {
   sleep,
 } from "../failover";
 import { newSpanId, newTraceId, recordSpan } from "../otel";
+import {
+  buildPolicyFromEnv as buildToolCompressPolicy,
+  compressMessages as compressToolMessages,
+  estimateTokensFromChars as estimateCompressedTokens,
+  type CompressionPolicy as ToolCompressPolicy,
+} from "../tool-result-compressor";
+
+// Built once at boot from process.env. The compressor is a pure module
+// so re-deriving the policy per request would just be wasted work — env
+// is static for the lifetime of the gateway process. Tests that need
+// a different policy override it directly via dependency injection in
+// the compressor's own test file.
+const TOOL_COMPRESS_POLICY: ToolCompressPolicy = buildToolCompressPolicy(process.env);
+
+/**
+ * Stamp `tool_compress_micro_cents_saved_est` on the tags map once the
+ * effective provider+model is known, by repricing the estimated saved
+ * input tokens at the model that actually ran. We can't do this when
+ * the compressor itself runs because routing might still swap the
+ * model, and the per-token rate varies by an order of magnitude
+ * between gpt-5.5 and deepseek-chat — pricing too early would over- or
+ * under-claim the savings. Cheap (table lookup + multiply) so we run
+ * it on the success path of every code branch.
+ *
+ * Tag is a string because the request row's `tags` column is JSONB-
+ * of-strings; the dashboard's getSavingsBreakdown coerces back via
+ * (tags->>'tool_compress_micro_cents_saved_est')::bigint.
+ */
+function stampToolCompressMicroCentsSaved(
+  tags: Record<string, string>,
+  provider: ProviderName,
+  model: string
+): void {
+  if (tags.tool_compress_applied !== "1") return;
+  const tokensSaved = Number(tags.tool_compress_tokens_saved_est ?? "0");
+  if (!Number.isFinite(tokensSaved) || tokensSaved <= 0) return;
+  // Re-use the cost calculator with output_tokens=0 so the result is
+  // strictly the input-side savings — that's the dimension we
+  // actually compressed. Cached-input is also 0 because the
+  // compressor strips bytes from the OUTBOUND request; cache-hit
+  // accounting is a separate dimension billed by the upstream after
+  // its own prompt-cache lookup.
+  const microCents = calcCostMicroCents(provider, model, tokensSaved, 0, 0);
+  if (microCents > 0) {
+    tags.tool_compress_micro_cents_saved_est = String(microCents);
+  }
+}
 
 // =========================================================================
 // Caller-visible routing decision response headers (v0.6.7)
@@ -119,6 +166,22 @@ type RoutingHeaderInfo = {
   routingReason: string | null;
   costMicroCents?: number;
   costSavedVsAskedMicroCents?: number;
+  /**
+   * Estimated input chars dropped by the tool-result compressor on this
+   * request. Surfaced as `X-Tokensmart-Tool-Compress-Chars-Saved` so an
+   * operator A/B-testing the feature can observe the per-request payoff
+   * without grepping the dashboard. 0 / undefined when the compressor
+   * didn't fire (master switch off, no eligible tool messages, or the
+   * caller sent x-ts-tool-compress: off).
+   */
+  toolCompressCharsSaved?: number;
+  /**
+   * Same as toolCompressCharsSaved but priced in micro_cents at the
+   * model that actually executed. 6 decimals preserve sub-cent
+   * precision. Optional (may be absent on streaming responses, where
+   * the model may swap during failover after headers flush).
+   */
+  toolCompressMicroCentsSaved?: number;
 };
 
 function sanitizeHeaderValue(s: string): string {
@@ -155,7 +218,52 @@ export function buildRoutingDecisionHeaders(
       info.costSavedVsAskedMicroCents
     );
   }
+  if (info.toolCompressCharsSaved !== undefined && info.toolCompressCharsSaved > 0) {
+    headers["X-Tokensmart-Tool-Compress-Chars-Saved"] = String(
+      info.toolCompressCharsSaved
+    );
+  }
+  if (
+    info.toolCompressMicroCentsSaved !== undefined &&
+    info.toolCompressMicroCentsSaved > 0
+  ) {
+    headers["X-Tokensmart-Tool-Compress-Saved-Cents"] = formatCentsFromMicro(
+      info.toolCompressMicroCentsSaved
+    );
+  }
   return headers;
+}
+
+/**
+ * Read the compressor breadcrumbs that the request handler stamped onto
+ * `tags` and turn them back into a partial RoutingHeaderInfo for the
+ * response-header builder. Tags are strings (the column is JSONB-of-
+ * strings) so the header builder can't read them directly without
+ * coercion. Unknown / missing values fall through to undefined →
+ * header omitted. The return shape is keyed to the
+ * `toolCompress{Chars,MicroCents}Saved` fields of RoutingHeaderInfo
+ * so callers can spread it directly.
+ */
+function readToolCompressFromTags(
+  tags: Record<string, string>
+): {
+  toolCompressCharsSaved: number | undefined;
+  toolCompressMicroCentsSaved: number | undefined;
+} {
+  if (tags.tool_compress_applied !== "1") {
+    return {
+      toolCompressCharsSaved: undefined,
+      toolCompressMicroCentsSaved: undefined,
+    };
+  }
+  const charsRaw = Number(tags.tool_compress_chars_saved ?? "");
+  const mcRaw = Number(tags.tool_compress_micro_cents_saved_est ?? "");
+  return {
+    toolCompressCharsSaved:
+      Number.isFinite(charsRaw) && charsRaw > 0 ? charsRaw : undefined,
+    toolCompressMicroCentsSaved:
+      Number.isFinite(mcRaw) && mcRaw > 0 ? mcRaw : undefined,
+  };
 }
 
 function applyRoutingDecisionHeaders(
@@ -710,6 +818,59 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     applyTemplateToBody(body as Record<string, unknown>, rendered, vars);
     tags.template = lookup.name;
     tags.template_version = String(lookup.version);
+  }
+
+  // ---- Tool-result compression (opt-in, env-flagged) -------------------
+  // When TOKENSMART_TOOL_COMPRESS_ENABLED=1, scan the messages array for
+  // role=tool/function entries and apply content-aware compression
+  // (git status / git diff / stack trace / NDJSON logs / ANSI strip /
+  // consecutive-line dedup) BEFORE forwarding to upstream. Reduces the
+  // billed input tokens on this turn AND every subsequent turn that
+  // replays the same tool result back to the model.
+  //
+  // Runs AFTER template substitution (so we compress the rendered body
+  // the upstream actually sees) and BEFORE fingerprinting (so a flood
+  // of identical compressed bodies still collides on a stable
+  // fingerprint — the compressor is deterministic + idempotent so this
+  // is safe).
+  //
+  // Per-call escape hatch: send `x-ts-tool-compress: off` to bypass.
+  // Useful when the agent is doing a one-off "give me the literal output"
+  // workflow that would be hurt by compression.
+  if (TOOL_COMPRESS_POLICY.enabled) {
+    const headerVal = (c.req.header("x-ts-tool-compress") ?? "").trim().toLowerCase();
+    const callerOptedOut = headerVal === "off" || headerVal === "0" || headerVal === "false";
+    if (!callerOptedOut) {
+      const { messages: compressed, result } = compressToolMessages(
+        body.messages as Parameters<typeof compressToolMessages>[0],
+        TOOL_COMPRESS_POLICY
+      );
+      if (result.applied) {
+        // Replace the messages array with the compressed view. We do NOT
+        // re-clone the whole body — `compressToolMessages` returns a new
+        // top-level array and only mutates the entries it actually
+        // rewrote (other entries are forwarded by reference). The
+        // request_body we eventually persist will reflect the compressed
+        // form: that's intentional, because operators auditing a
+        // request need to see what we actually sent upstream, not what
+        // the client originally typed. The originalChars stamp on tags
+        // preserves the audit breadcrumb.
+        body.messages = compressed as typeof body.messages;
+        const tokensSavedEst = estimateCompressedTokens(result.totalCharsSaved);
+        tags.tool_compress_applied = "1";
+        tags.tool_compress_chars_saved = String(result.totalCharsSaved);
+        tags.tool_compress_tokens_saved_est = String(tokensSavedEst);
+        tags.tool_compress_messages_count = String(result.perMessage.length);
+        // First-shape wins for the tag value when multiple messages
+        // were compressed — gives operators a quick "what KIND of
+        // tool output is dominating my spend" signal without bloating
+        // the tag schema. Full per-message detail is recoverable
+        // from the compressor's deterministic output if needed.
+        if (result.perMessage[0]) {
+          tags.tool_compress_shape = result.perMessage[0].shape;
+        }
+      }
+    }
   }
 
   // ---- Fingerprint + loop detection ------------------------------------
@@ -1531,6 +1692,10 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
           // tool.
           tags.tool_calls_observed = "stream_finish_reason";
         }
+        // Reprice the compressor's saved input tokens at the model that
+        // actually executed (failover may have swapped it). No-op when
+        // the compressor didn't fire on this request.
+        stampToolCompressMicroCentsSaved(tags, effectiveProvider, effectiveModel);
         const record: InsertRequest = {
           project_id: apiKey.project_id,
           api_key_id: apiKey.id,
@@ -1643,10 +1808,20 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
         // the cost off the request row by following X-Tokensmart-
         // Request-Id; the streaming success path is the one place
         // where same-trip cost-in-headers is fundamentally impossible.
+        // Tool-compress chars/savings ARE known at this point (the
+        // compressor ran before SSE handoff) so we surface them
+        // even on stream — just micro-cents priced at the model
+        // that flushed first, not the one that ultimately ran if
+        // failover swaps mid-stream.
         ...buildRoutingDecisionHeaders({
           askedModel: originalModel,
           landedModel: effectiveModel,
           routingReason: routingReason,
+          ...readToolCompressFromTags(tags),
+          // readToolCompressFromTags returns { chars, microCents }; the
+          // header builder expects toolCompressCharsSaved /
+          // toolCompressMicroCentsSaved. Spread + remap explicitly so
+          // typos can't silently drop fields.
         }),
       },
     });
@@ -1673,7 +1848,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   // honor the original X. Tagged on the row so operators can
   // measure how often this safety net fires (target: very rarely;
   // a high rate means the policy artifact is stale and needs a
-  // policy artifact refresh).
+  // bench:extract refresh).
   if (
     attempt.ok &&
     rewriteFallbackEnabled() &&
@@ -1810,6 +1985,10 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     costMicroCents
   );
   stampResponseToolCallTags(tags, result.body, "response");
+  // Reprice the compressor's saved input tokens at the model that
+  // actually executed (failover may have swapped it). No-op when
+  // the compressor didn't fire on this request.
+  stampToolCompressMicroCentsSaved(tags, effectiveProvider, effectiveModel);
 
   const record: InsertRequest = {
     project_id: apiKey.project_id,
@@ -1922,6 +2101,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     routingReason: routingReason,
     costMicroCents: costMicroCents,
     costSavedVsAskedMicroCents: routingSaving,
+    ...readToolCompressFromTags(tags),
   });
   return c.json(result.body, result.status as 200);
 });

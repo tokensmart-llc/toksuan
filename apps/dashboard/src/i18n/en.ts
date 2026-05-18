@@ -535,9 +535,11 @@ export const en: Dictionary = {
       "Send a request through TokSuan to get the first saved-money receipt. The dashboard will show asked model, landed model, cost, saved cost, and routing reason once traffic lands.",
     savingsHeroBreakdownRouting: "Routing",
     savingsHeroBreakdownCache: "Prompt cache",
+    savingsHeroBreakdownToolCompress: "Tool-result compression",
     savingsHeroBreakdownPrevented: "Also prevented",
     savingsHeroRoutingNote: "{n} requests downgraded",
     savingsHeroCacheNote: "{n} requests cached",
+    savingsHeroToolCompressNote: "{n} requests with shrunk tool output",
     savingsHeroPreventedNote: "{loops} runaway loops · {budget} over-budget",
 
     receiptCardTitle: "Latest savings receipt",

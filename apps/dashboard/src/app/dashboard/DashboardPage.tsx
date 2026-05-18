@@ -783,9 +783,11 @@ export async function DashboardPage() {
     total_saving_micro_cents: 0,
     routing_saving_micro_cents: 0,
     cache_saving_micro_cents: 0,
+    tool_compress_saving_micro_cents: 0,
     total_spend_micro_cents: 0,
     routing_request_count: 0,
     cache_hit_count: 0,
+    tool_compress_request_count: 0,
     loops_prevented_count: 0,
     budget_blocked_count: 0,
   };
@@ -800,9 +802,11 @@ export async function DashboardPage() {
     total_saving_micro_cents: 0,
     routing_saving_micro_cents: 0,
     cache_saving_micro_cents: 0,
+    tool_compress_saving_micro_cents: 0,
     total_spend_micro_cents: 0,
     routing_request_count: 0,
     cache_hit_count: 0,
+    tool_compress_request_count: 0,
     loops_prevented_count: 0,
     budget_blocked_count: 0,
   };
@@ -811,25 +815,19 @@ export async function DashboardPage() {
 
   try {
     const scope = await getScope();
-    [
-      totalSpendMicroCents,
-      spendByModel,
-      recent,
-      budgets,
-      blockedCount,
-      planLimitBlockedCount,
-      loopCount,
-      routedCount,
-      cachedInputTokens,
-      topLoops,
-      daily,
-      anomaly,
-      cacheSavings,
-      abExperiments,
-      savings,
-      savings7d,
-      topRoutes7d,
-    ] = await Promise.all([
+    // We use Promise.allSettled rather than Promise.all so an
+    // individual card's query failing doesn't nuke the entire
+    // dashboard. The legacy Promise.all behaviour bubbled the first
+    // throw out to the page-level catch (line below), which set
+    // `dbError` and replaced the WHOLE render with an error toast —
+    // hiding successful queries' data along with it.
+    //
+    // This matters most under the SQLite trial backend, where
+    // queries that use generate_series / lateral joins / certain
+    // DATE_TRUNC patterns can't translate to SQLite cleanly. With
+    // allSettled, the savings hero, recent requests, spend totals
+    // etc. all keep working; only the daily-chart card goes empty.
+    const results = await Promise.allSettled([
       getTotalSpendMicroCents(7, scope),
       getSpendByModel(7, scope),
       getRecentRequests(50, scope),
@@ -848,6 +846,38 @@ export async function DashboardPage() {
       getSavingsBreakdown(168, scope),
       getTopRoutedPairs(168, 3, scope),
     ]);
+    // Helper: assign a settled result's value into a typed slot, or
+    // log + retain the pre-declared default on rejection. Inline rather
+    // than a generic helper because each slot's default is already
+    // declared above (so TS gets the right type for free) and a tagged
+    // log line is more useful than a generic "promise N rejected".
+    const take = <T,>(idx: number, name: string, fallback: T): T => {
+      const r = results[idx];
+      if (r && r.status === "fulfilled") return r.value as T;
+      const reason = r && r.status === "rejected" ? r.reason : new Error("missing");
+      console.warn(
+        `[dashboard] ${name} failed:`,
+        reason instanceof Error ? reason.message : String(reason)
+      );
+      return fallback;
+    };
+    totalSpendMicroCents = take(0, "getTotalSpendMicroCents", totalSpendMicroCents);
+    spendByModel = take(1, "getSpendByModel", spendByModel);
+    recent = take(2, "getRecentRequests", recent);
+    budgets = take(3, "getBudgetStatus", budgets);
+    blockedCount = take(4, "getBlockedCount", blockedCount);
+    planLimitBlockedCount = take(5, "getPlanLimitBlockedCount", planLimitBlockedCount);
+    loopCount = take(6, "getLoopCount", loopCount);
+    routedCount = take(7, "getRoutedCount", routedCount);
+    cachedInputTokens = take(8, "getCachedInputTokens", cachedInputTokens);
+    topLoops = take(9, "getTopLoops", topLoops);
+    daily = take(10, "getDailyStats", daily);
+    anomaly = take<AnomalyVerdict | null>(11, "detectSpendAnomaly", anomaly);
+    cacheSavings = take(12, "getCacheSavingsMicroCents", cacheSavings);
+    abExperiments = take(13, "getAbExperimentSummary", abExperiments);
+    savings = take(14, "getSavingsBreakdown(30d)", savings);
+    savings7d = take(15, "getSavingsBreakdown(7d)", savings7d);
+    topRoutes7d = take(16, "getTopRoutedPairs", topRoutes7d);
 
     // The two queries below depend on schema additions (migrations 006 + 007).
     // Run them OUTSIDE the main Promise.all so a missing column (e.g. an
@@ -881,9 +911,28 @@ export async function DashboardPage() {
 
     // Recommendations engine — fast (<10ms) so we run it inline. Yields 0
     // results on empty databases, which the UI treats as "no card shown."
-    recommendations = await getRecommendations(scope);
+    // Wrap independently so a failure here doesn't nuke the entire page
+    // (the recommendation queries use Postgres regex match operators
+    // that don't translate to the SQLite trial backend).
+    recommendations = await getRecommendations(scope).catch((err) => {
+      console.warn(
+        "[dashboard] getRecommendations failed:",
+        err instanceof Error ? err.message : err
+      );
+      return [];
+    });
   } catch (err) {
     dbError = err instanceof Error ? err.message : String(err);
+    // Surface the underlying error to the server console so an operator
+    // staring at a "Database not reachable" toast can see exactly which
+    // query failed (the human card only shows the top-level message).
+    // Individual queries inside `allSettled` log their own per-query
+    // warnings; this catches anything that fell through THOSE catches
+    // (rare — usually means a brand-new query didn't get wrapped).
+    console.error(
+      "[dashboard] page render failed:",
+      err instanceof Error ? (err.stack ?? err.message) : err
+    );
   }
 
   // Resolve the dictionary once per render so every section below shares
@@ -1292,6 +1341,25 @@ done`}
               surface them as counts, not dollars. */}
           {(() => {
             const hasSavings = savings.total_saving_micro_cents > 0;
+            // The breakdown card opens whenever ANY savings dimension has a
+            // signal worth showing — not just when there's a positive
+            // dollar number. Two cases that previously got hidden under a
+            // strict `hasSavings` gate, and shouldn't have been:
+            //   (a) tool-result compressor fired but every request 502'd
+            //       upstream (e.g. operator dogfooding with a placeholder
+            //       OPENAI_API_KEY) — we want them to see "yes, the
+            //       compressor ran on N requests" even if the dollar
+            //       number is still 0.
+            //   (b) loops or budget caps blocked traffic but no successful
+            //       request landed yet — still useful to surface the
+            //       count of prevented requests.
+            // The hero dollar number itself is still gated on hasSavings;
+            // this only affects the breakdown grid below.
+            const showBreakdown =
+              hasSavings ||
+              savings.tool_compress_request_count > 0 ||
+              savings.loops_prevented_count > 0 ||
+              savings.budget_blocked_count > 0;
             const pct = fmtSavingsPercent(
               savings.total_saving_micro_cents,
               savings.total_spend_micro_cents
@@ -1331,7 +1399,7 @@ done`}
                   </div>
                 </div>
 
-                {hasSavings && (
+                {showBreakdown && (
                   <div className="savings-hero-breakdown">
                     <div className="savings-hero-breakdown-item">
                       <div className="savings-hero-breakdown-label">
@@ -1361,6 +1429,24 @@ done`}
                         )}
                       </div>
                     </div>
+                    {savings.tool_compress_request_count > 0 && (
+                      <div className="savings-hero-breakdown-item">
+                        <div className="savings-hero-breakdown-label">
+                          {tDash.savingsHeroBreakdownToolCompress}
+                        </div>
+                        <div className="savings-hero-breakdown-value">
+                          {fmtSavingsUsd(
+                            savings.tool_compress_saving_micro_cents
+                          )}
+                        </div>
+                        <div className="savings-hero-breakdown-note">
+                          {tDash.savingsHeroToolCompressNote.replace(
+                            "{n}",
+                            fmtNum(savings.tool_compress_request_count)
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {(savings.loops_prevented_count > 0 ||
                       savings.budget_blocked_count > 0) && (
                       <div className="savings-hero-breakdown-item">

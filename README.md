@@ -1,45 +1,22 @@
 # TokSuan
 
-> **AI spend control and routing for agents.**
-> See every model call, cap runaway spend, and route easy work to cheaper models
+> **Spend control and routing for AI agents.**
+> Make every agent turn visible, cap runaway spend, and route to cheaper models
 > only when the receipt proves the trade worked.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
 [![Made for agents](https://img.shields.io/badge/made%20for-AI%20agents-purple.svg)](#why-toksuan)
-[![Website](https://img.shields.io/badge/website-tokensmt.com-0A66C2.svg)](https://tokensmt.com)
 
-![TokSuan tutorial screenshot](docs/assets/toksuan-tutorial.png)
+English | [中文](README.zh-CN.md)
 
-TokSuan is operated by TokenSmart LLC and sits between your agents and upstream
-model providers. Keep the OpenAI-compatible request shape your tools already
-use, then add spend receipts, project budgets, loop protection, and
-evidence-based routing.
-
-The core idea is simple: **See it. Cap it. Shrink it.** TokSuan is not a
-cheap-model proxy. Simple turns can route to fast inexpensive models, while
-hard/frontier turns keep high-quality models unless your own traffic proves a
-safe downgrade.
-
-## Watch The Tutorial
-
-The short tutorial shows the hosted flow end to end: bring your own provider
-key, create a TokSuan project key, send an agent request, inspect the receipt,
-and understand how routing can reduce agent spend.
-
-- [Watch on LinkedIn](https://www.linkedin.com/posts/pichao-wang-494773109_aiagents-llmops-aiinfrastructure-ugcPost-7458333083977547776-lwl2?utm_source=share&utm_medium=member_desktop&rcm=ACoAABtX8fABVkgbF_NMGobvnhN-MyxYrmY4wGE)
-- [Watch on YouTube](https://youtu.be/ndWhjo64d-g)
-- [Watch on Bilibili](https://www.bilibili.com/video/BV1baduBmELn/?spm_id_from=333.1387.homepage.video_card.click&vd_source=5fa8c3c626a489f11a0110ba86ed17f5)
-
-## Four Steps, No Agent Rewrite
-
-1. Add the provider key you already use, such as OpenAI, Anthropic, Google
-   Gemini, DeepSeek, Qwen, or Doubao.
-2. Create a TokSuan project and copy its `ts_...` project key.
-3. Point your agent or SDK to `https://gateway.tokensmt.com/v1` as the
-   OpenAI-compatible `base_url`.
-4. Inspect the dashboard receipt for cost, latency, token usage, budget checks,
-   and any routing decision.
+TokSuan is operated by TokenSmart LLC and sits between your agent and upstream
+model providers. It keeps the OpenAI-compatible API shape your tools already
+use, then adds spend receipts, budgets, loop protection, and evidence-based
+routing.
+It is not a cheap-model proxy: simple turns can route to fast inexpensive
+models, hard/frontier turns keep high-quality models unless there is strong
+evidence to switch, and each project's real traffic improves future routing.
 
 ```bash
 curl https://gateway.tokensmt.com/v1/chat/completions \
@@ -69,6 +46,8 @@ X-Tokensmart-Asked-Model: gpt-5.5
 X-Tokensmart-Landed-Model: deepseek-chat
 X-Tokensmart-Routing-Reason: baseline:chat:simple
 X-Tokensmart-Cost-Saved-Vs-Asked-Cents: 0.940000
+X-Tokensmart-Tool-Compress-Chars-Saved: 4200       # only when the
+X-Tokensmart-Tool-Compress-Saved-Cents: 0.060000   # compressor is opted in
 ```
 
 For paid API providers, TokSuan can show dollar savings from token prices.
@@ -82,22 +61,58 @@ use a cheap OpenAI judge, Anthropic requests use Haiku, DeepSeek requests use a
 small DeepSeek model). If no matching BYO key exists, TokSuan falls back to a
 local heuristic rather than sending prompts to another provider.
 
-## Why Not OpenRouter?
+## Tool-result compressor (opt-in)
 
-OpenRouter gives developers access to many models behind one API. TokSuan
-solves a different problem: deciding which model an agent should use for each
-turn, enforcing spend controls before the upstream call, and proving what
-changed afterward.
+Long-running coding agents replay the same `git status`, `cat`, `cargo
+test` stdout back into their LLM context on every turn. The bytes are
+billed as input tokens by every upstream provider. TokSuan ships an
+opt-in compressor that scans `tool` / `function` messages for known
+content shapes and shrinks them deterministically before forwarding
+upstream — so the same agent loop pays for fewer tokens without the
+agent code changing.
 
-```text
-OpenRouter: model access and aggregation
-TokSuan: agent routing decisions, budgets, receipts, and learning policies
-```
+Recognised shapes (heuristic-only, no command-name signal needed):
 
-You can run TokSuan with your own OpenAI, Anthropic, Google, DeepSeek, Qwen,
-or Doubao keys. Simple turns can flow to cheaper models; hard/frontier turns
-stay on advanced models unless your own workload proves a safe alternative.
-The more your agent runs, the more project-specific the routing can become.
+- **git status** — collapsed to branch + counts (`18 staged, 6 untracked`)
+- **git diff** — strips `index`/`---`/`+++` noise, elides body over budget
+- **shell listings** — `ls -l` / `find` / `tree` — head + tail with
+  middle elided
+- **stack traces** — keeps error message + first/last frames
+- **NDJSON / structured logs** — buckets by `level`, collapses repeats
+- **ANSI-coloured output** — strips escape sequences
+- **Repeating log lines** — consecutive identical lines → `<line> (×N)`
+
+Typical per-message savings: 60-95% on real coding-agent output. See
+`apps/gateway/scripts/preview-tool-compress.ts` for live before/after
+demos on 7 representative inputs.
+
+Design constraints — the compressor is intentionally narrower than a
+local-shell-level filter because we operate at the API layer:
+
+- **Only `tool` / `function` role messages are touched.** System,
+  user, and assistant content is never modified.
+- **Heuristic shape detection only.** The original command name
+  (`git status`, `cargo test`) is lost by the time bytes reach the
+  gateway, so we identify content shape from structure alone. Five
+  shapes covered; unknown shapes pass through unchanged.
+- **Idempotent + deterministic.** Running the compressor twice yields
+  identical bytes — loop-detection fingerprints stay stable, replays
+  are reproducible.
+- **Off by default.** Silently rewriting prompts conflicts with the
+  "we record what happened, we don't fudge prompts" trust contract.
+  Operators flip `TOKENSMART_TOOL_COMPRESS_ENABLED=1` knowingly.
+  Per-call escape hatch via header `x-ts-tool-compress: off`.
+
+Visibility when the compressor fires:
+
+- Response headers `X-Tokensmart-Tool-Compress-Chars-Saved` and
+  `X-Tokensmart-Tool-Compress-Saved-Cents` for same-trip proof
+- Dedicated cell in the dashboard's "Saved · last 30 days" hero card
+  alongside routing and prompt-cache savings
+- Per-request tags (`tool_compress_shape`, `tool_compress_chars_saved`,
+  ...) on the request row for audit + per-shape analytics
+
+Design and env knobs in `apps/gateway/src/tool-result-compressor.ts`.
 
 ## Built For Real Agents
 
@@ -138,12 +153,21 @@ evidence it is safe.
 - Project routing rules, shadow mode, and A/B quality proof
 - Per-provider BYO complexity judging and per-project routing optimization
 - Retry, failover, cache-control injection, tags, alerts, and semantic cache
+- **Tool-result compressor (opt-in)** — shrinks `tool` / `function` messages
+  (git status, git diff, stack traces, NDJSON logs, ANSI-coloured output,
+  spammy repeating lines) before forwarding upstream. Saves input tokens
+  on every coding-agent turn that replays Bash output. See
+  [Tool-result compressor](#tool-result-compressor-opt-in) above for the
+  design.
 
 ### Dashboard
 
 - Email OTP auth
 - Projects, API keys, budgets, routing rules, alerts, audit log
 - Savings receipt and 7-day value report
+- Three-dimensional savings hero card: **routing savings**, **prompt-cache
+  savings**, **tool-result compression savings** (only renders cells whose
+  dimension actually fired in the window)
 - Provider-key upload with encrypted storage
 - Agents/session view when callers send attribution headers
 - Trust page and production health posture
@@ -151,6 +175,10 @@ evidence it is safe.
 ### Deployment
 
 - Local dev via Docker Compose
+- **Single-binary SQLite trial mode** for both gateway and dashboard — no
+  Postgres, no Docker. Point `DATABASE_URL=sqlite:./data/toksuan.db` and
+  the runtime auto-migrates. Multi-tenant features (auth, KMS, plan caps,
+  semantic cache) gracefully degrade; single-tenant trial is fully usable.
 - Production Compose file for self-hosting
 - Hosted-friendly env for Vercel dashboard + Render gateway + Neon Postgres
 - Scriptable retention and pricing-freshness jobs (`bun run sweep-old-requests`,
@@ -167,7 +195,7 @@ evidence it is safe.
 4. Run the generated curl command or point your SDK/agent to `https://gateway.tokensmt.com/v1`.
 5. Inspect the first receipt on the dashboard.
 
-### Self-host dev
+### Self-host dev (Postgres)
 
 ```bash
 git clone https://github.com/tokensmart-llc/toksuan.git
@@ -193,6 +221,53 @@ curl http://localhost:8787/v1/chat/completions \
 
 For production self-hosting, see [`QUICKSTART.md`](QUICKSTART.md) and
 [`docs/production-runbook.md`](docs/production-runbook.md).
+
+### Self-host trial (SQLite, no Docker)
+
+Single-binary mode for users who want to evaluate TokSuan locally without
+spinning up Postgres. Both gateway and dashboard read from the same SQLite
+file; multi-tenant features (auth, KMS, plan caps, semantic cache,
+recommendations) gracefully degrade.
+
+```bash
+git clone https://github.com/tokensmart-llc/toksuan.git
+cd toksuan
+
+# Gateway env
+cat > apps/gateway/.env <<'EOF'
+DATABASE_URL=sqlite:./data/toksuan-dev.db
+OPENAI_API_KEY=sk-your-openai-key
+EOF
+cd apps/gateway && bun install && bun run dev &
+
+# Dashboard env (separate terminal)
+cat > apps/dashboard/.env.local <<'EOF'
+DATABASE_URL=sqlite:../gateway/data/toksuan-dev.db
+TOKENSMART_AUTH_ENABLED=0
+EOF
+cd apps/dashboard && bun install && WATCHPACK_POLLING=true bun run dev
+```
+
+### Verify your install
+
+Three scripts validate the install end-to-end, from offline → live gateway
+→ dashboard data:
+
+```bash
+# 1. Pure-module preview (no gateway, no DB) — see what the tool-result
+#    compressor does to 7 representative inputs (git status, git diff,
+#    stack traces, NDJSON logs, ...).
+cd apps/gateway && bun run preview:tool-compress
+
+# 2. Single-request diagnostic — 5-station check (gateway up, env flag,
+#    response header, DB tag, dashboard pointer).
+./apps/gateway/scripts/diagnose-tool-compress.sh
+
+# 3. Multi-shape end-to-end demo — sends one realistic tool message per
+#    recognised content shape, prints per-call savings and a rolled-up
+#    aggregate matching what the dashboard hero card renders.
+cd apps/gateway && bun run demo:tool-compress
+```
 
 ## Integrations
 

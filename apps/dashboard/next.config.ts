@@ -77,6 +77,13 @@ const config: NextConfig = {
   // `.next/standalone`. The Dockerfile copies that directory so the
   // production image doesn't need `node_modules` at runtime.
   output: "standalone",
+  // `better-sqlite3` is a native binding and webpack can't bundle it
+  // (it has a `.node` binary). Mark it server-external so webpack
+  // emits a plain `require("better-sqlite3")` into the server bundle
+  // and Node resolves it from node_modules at runtime. Only relevant
+  // when DATABASE_URL points at a `sqlite:` URL — Postgres deploys
+  // never load this code path.
+  serverExternalPackages: ["better-sqlite3"],
   async headers() {
     return [
       {

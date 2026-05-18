@@ -26,7 +26,11 @@ bun.lock
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
 postgres-data/
 
 # Logs

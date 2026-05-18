@@ -169,9 +169,11 @@ export default async function BillingPage({
     total_saving_micro_cents: 0,
     routing_saving_micro_cents: 0,
     cache_saving_micro_cents: 0,
+    tool_compress_saving_micro_cents: 0,
     total_spend_micro_cents: 0,
     routing_request_count: 0,
     cache_hit_count: 0,
+    tool_compress_request_count: 0,
     loops_prevented_count: 0,
     budget_blocked_count: 0,
   };

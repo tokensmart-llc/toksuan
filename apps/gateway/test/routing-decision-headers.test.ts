@@ -187,4 +187,72 @@ describe("buildRoutingDecisionHeaders (v0.6.7)", () => {
     expect(headers["X-Tokensmart-Cost-Cents"]).not.toContain("e");
     expect(headers["X-Tokensmart-Cost-Cents"]).not.toContain("E");
   });
+
+  // -- Tool-result compressor headers (rtk-style input-token savings) --
+
+  test("compressor headers are OMITTED when the compressor didn't fire", () => {
+    // Default request — no compression breadcrumbs, no headers. Pins the
+    // "invisible by default" contract: callers who don't enable the
+    // feature shouldn't see new headers appear in their responses.
+    const headers = buildRoutingDecisionHeaders({
+      askedModel: "gpt-5.2",
+      landedModel: "gpt-5.2",
+      routingReason: null,
+      costMicroCents: 12_345,
+      costSavedVsAskedMicroCents: 0,
+    });
+    expect(headers["X-Tokensmart-Tool-Compress-Chars-Saved"]).toBeUndefined();
+    expect(headers["X-Tokensmart-Tool-Compress-Saved-Cents"]).toBeUndefined();
+  });
+
+  test("compressor headers carry chars + dollars when the compressor fired", () => {
+    const headers = buildRoutingDecisionHeaders({
+      askedModel: "gpt-5.2",
+      landedModel: "gpt-4o-mini",
+      routingReason: "baseline:chat:simple",
+      costMicroCents: 5_000,
+      costSavedVsAskedMicroCents: 8_000,
+      toolCompressCharsSaved: 4200,
+      toolCompressMicroCentsSaved: 175,
+    });
+    // Chars are an integer count, no decimals.
+    expect(headers["X-Tokensmart-Tool-Compress-Chars-Saved"]).toBe("4200");
+    // Dollars use the same 6-decimals-of-cents format as the other cost
+    // headers so a single parser can handle them all.
+    expect(headers["X-Tokensmart-Tool-Compress-Saved-Cents"]).toBe("0.175000");
+  });
+
+  test("compressor headers are OMITTED when savings are zero (no false-positive UX)", () => {
+    // The compressor stamps a tag but, for a particular request, may
+    // have ended up with zero net savings (e.g. content < min threshold,
+    // unknown shape, no mutation). Don't surface a "saved $0" header —
+    // it's noise and would mislead operators reading the savings hero.
+    const headers = buildRoutingDecisionHeaders({
+      askedModel: "gpt-5.2",
+      landedModel: "gpt-5.2",
+      routingReason: null,
+      costMicroCents: 5_000,
+      costSavedVsAskedMicroCents: 0,
+      toolCompressCharsSaved: 0,
+      toolCompressMicroCentsSaved: 0,
+    });
+    expect(headers["X-Tokensmart-Tool-Compress-Chars-Saved"]).toBeUndefined();
+    expect(headers["X-Tokensmart-Tool-Compress-Saved-Cents"]).toBeUndefined();
+  });
+
+  test("compressor chars header without dollars is allowed (streaming success path)", () => {
+    // On the streaming branch we know chars saved (compressor ran before
+    // SSE handoff) but micro-cents may swap if failover changes the model
+    // mid-stream. Verify the chars header can ship alone — operators get
+    // the compression dimension visible same-trip even when pricing isn't
+    // pinned yet.
+    const headers = buildRoutingDecisionHeaders({
+      askedModel: "gpt-5.2",
+      landedModel: "gemini-2.5-flash-lite",
+      routingReason: "baseline:chat:simple",
+      toolCompressCharsSaved: 1_800,
+    });
+    expect(headers["X-Tokensmart-Tool-Compress-Chars-Saved"]).toBe("1800");
+    expect(headers["X-Tokensmart-Tool-Compress-Saved-Cents"]).toBeUndefined();
+  });
 });

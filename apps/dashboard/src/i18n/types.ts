@@ -516,10 +516,18 @@ export type Dictionary = {
     savingsHeroSubEmpty: string;
     savingsHeroBreakdownRouting: string;
     savingsHeroBreakdownCache: string;
+    /**
+     * Tool-result compressor savings cell. Only rendered when the
+     * compressor actually fired in the time window — invisible UI
+     * for self-hosters who haven't enabled it.
+     */
+    savingsHeroBreakdownToolCompress: string;
     savingsHeroBreakdownPrevented: string;
     /** "{n} requests downgraded" / "{n} requests cached" — `{n}` is substituted. */
     savingsHeroRoutingNote: string;
     savingsHeroCacheNote: string;
+    /** "{n} requests had tool messages compressed". */
+    savingsHeroToolCompressNote: string;
     /** "{loops} runaway loops · {budget} over-budget". */
     savingsHeroPreventedNote: string;
 

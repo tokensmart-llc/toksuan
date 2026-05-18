@@ -100,7 +100,8 @@ const EnvSchema = z.object({
   /**
    * v0.6.5 — file-watch hot-reload for `baseline-policy.json`. When
    * enabled (default), the gateway watches the artifact file's
-   * directory; a successful policy-artifact rewrite triggers a debounced
+   * directory; a successful rewrite (e.g. by `bench:extract` after
+   * `auto-bench-new-models --approve`) triggers a debounced
    * `reloadBaselinePolicy()` within ~300ms. The new policy is
    * effective on the very next request — no gateway restart needed.
    * Pairs with the `tokensmart_baseline_reload` pg_notify channel for
@@ -232,6 +233,60 @@ const EnvSchema = z.object({
    * Set to `0` to disable the check (not recommended in prod).
    */
   TOKENSMART_MAX_BODY_BYTES: z.coerce.number().default(10 * 1024 * 1024),
+
+  // --- Tool-result compressor (input-token saver) -----------------------
+  /**
+   * Master switch for the tool-result compressor. When "1", the gateway
+   * inspects every `tool` / `function` message in the request body and
+   * applies content-aware compression (git status / git diff / stack
+   * trace / NDJSON logs / ANSI strip / consecutive-line dedup) BEFORE
+   * forwarding to the upstream provider. Reduces billed input tokens.
+   *
+   * Default OFF. Modifying the request body silently is incompatible
+   * with TokSuan's "we record what happened, we don't fudge prompts"
+   * trust contract — operators must opt in deliberately. Per-call
+   * escape hatch: send `x-ts-tool-compress: off` to bypass for one
+   * request even when the master switch is on.
+   *
+   * The compressor only ever rewrites `tool` / `function` role
+   * messages — system/user/assistant content is never touched. See
+   * src/tool-result-compressor.ts for the full design.
+   */
+  TOKENSMART_TOOL_COMPRESS_ENABLED: z.string().default("0"),
+  /**
+   * Minimum byte length before the compressor considers a single tool
+   * message. Below this floor, even a perfect filter can save fewer
+   * tokens than the receipt overhead is worth, AND small blobs
+   * trigger more false-positive shape detections (a 50-char string
+   * that happens to start with "On branch ..." isn't necessarily a
+   * git status). Default 500 bytes.
+   */
+  TOKENSMART_TOOL_COMPRESS_MIN_MESSAGE_CHARS: z.coerce.number().default(500),
+  /**
+   * Hard upper bound on a per-message compressed length. After
+   * shape-specific compression runs, anything still above this cap
+   * gets a generic head/tail truncation. Default 4000 chars
+   * (~1100 tokens). Raise if you have agents that legitimately
+   * need long tool outputs in context.
+   */
+  TOKENSMART_TOOL_COMPRESS_MAX_COMPRESSED_CHARS: z.coerce.number().default(4000),
+  /** Strip ANSI escape codes from tool messages. Almost always safe. */
+  TOKENSMART_TOOL_COMPRESS_STRIP_ANSI: z.string().default("1"),
+  /**
+   * Collapse exact-equal consecutive lines into "<line> (×N)". Hits
+   * the dominant savings shape on docker logs / verbose pytest /
+   * spammy build output. Default ON when the master switch is on.
+   */
+  TOKENSMART_TOOL_COMPRESS_DEDUP_LINES: z.string().default("1"),
+  /**
+   * Comma-separated tool names whose results we never compress —
+   * the per-call escape hatch for tools where the agent really does
+   * need every byte (e.g. a `vision_describe` tool that returns
+   * structured pixel data, or a `search_web` tool whose snippets
+   * the agent quotes verbatim). Matched against
+   * `messages[i].name` (case-insensitive).
+   */
+  TOKENSMART_TOOL_COMPRESS_EXCLUDE_TOOLS: z.string().optional(),
 
   // --- CORS ---------------------------------------------------------------
   /**

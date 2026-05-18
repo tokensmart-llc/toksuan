@@ -1,29 +1,38 @@
-import postgres from "postgres";
 import { unstable_cache } from "next/cache";
 import type { OrgSamlConfig } from "./saml";
+import { activeBackend, buildSql, type Sql } from "./sql-driver";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
   throw new Error("DATABASE_URL is not set. Copy .env.example to .env.local.");
 }
 
-// Reuse the connection across hot-reloads in dev.
+// Reuse the connection across hot-reloads in dev. Single global handle
+// regardless of backend — `buildSql` returns a postgres.js client for
+// `postgres://` URLs and a SQLite-backed shim that satisfies the same
+// surface for `sqlite:` / `:memory:` URLs. Callers in this file talk
+// to that single `sql` handle and never branch on backend.
 declare global {
   // eslint-disable-next-line no-var
-  var __tokensmart_sql: ReturnType<typeof postgres> | undefined;
+  var __tokensmart_sql: Sql | undefined;
 }
 
-export const sql =
-  global.__tokensmart_sql ??
-  postgres(url, {
-    max: 5,
-    idle_timeout: 20,
-    onnotice: () => {},
-  });
+export const sql: Sql = global.__tokensmart_sql ?? buildSql(url);
 
 if (process.env.NODE_ENV !== "production") {
   global.__tokensmart_sql = sql;
 }
+
+/**
+ * Backend the dashboard is reading from. Some queries (LATERAL joins,
+ * advanced JSONB-aggregation, generate_series in obscure positions) are
+ * Postgres-only and a SQLite-mode dashboard skips those cards rather
+ * than render a confusing error. Pages can guard with this and fall back
+ * to an empty-state when needed; queries that don't translate cleanly
+ * raise a runtime error and the existing per-card try/catch in
+ * `app/dashboard/DashboardPage.tsx` keeps the rest of the page rendering.
+ */
+export { activeBackend };
 
 /**
  * Convention used by every query in this file for multi-tenant scoping.
@@ -299,8 +308,15 @@ export type DailyStats = {
  */
 export const getDailyStats = cacheStats(
   async (days = 7, scope?: Scope): Promise<DailyStats[]> => {
-    // Scope is applied inside the LEFT JOIN so days with no matching rows still
-    // show up as buckets filled with zeros.
+    // The Postgres-only `generate_series` lets us emit a row per day
+    // even when no traffic landed that day. SQLite has no such function
+    // (its date-series equivalent is a recursive CTE — different
+    // syntax + different result shape). Rather than maintain two
+    // dialects, we do the zero-day fill in JavaScript: aggregate
+    // by `date(created_at)` (which `DATE_TRUNC('day', col)` translates
+    // to under SQLite), then walk the N-day window in JS and stamp
+    // zeros for any missing days. Works on both backends, no
+    // branching, no recursive CTEs.
     const scopeFilter =
       scope === undefined
         ? sql`TRUE`
@@ -310,7 +326,7 @@ export const getDailyStats = cacheStats(
 
     const rows = await sql<
       {
-        day: Date;
+        day: Date | string;
         cost_micro_cents: string;
         call_count: number;
         loop_count: number;
@@ -318,15 +334,8 @@ export const getDailyStats = cacheStats(
         routed_count: number;
       }[]
     >`
-      WITH days AS (
-        SELECT generate_series(
-          DATE_TRUNC('day', NOW()) - ((${days} - 1) || ' days')::INTERVAL,
-          DATE_TRUNC('day', NOW()),
-          INTERVAL '1 day'
-        ) AS day
-      )
       SELECT
-        d.day,
+        DATE_TRUNC('day', r.created_at) AS day,
         COALESCE(SUM(r.cost_micro_cents), 0)::bigint AS cost_micro_cents,
         COALESCE(COUNT(r.id), 0)::int AS call_count,
         COALESCE(SUM(CASE WHEN r.status = 'loop_detected' THEN 1 ELSE 0 END), 0)::int
@@ -340,22 +349,54 @@ export const getDailyStats = cacheStats(
               END),
           0
         )::int AS routed_count
-      FROM days d
-      LEFT JOIN requests r
-        ON DATE_TRUNC('day', r.created_at) = d.day
+      FROM requests r
+      WHERE r.created_at > NOW() - (${days} || ' days')::INTERVAL
         AND (${scopeFilter})
-      GROUP BY d.day
-      ORDER BY d.day ASC
+      GROUP BY DATE_TRUNC('day', r.created_at)
+      ORDER BY day ASC
     `;
 
-    return rows.map((r) => ({
-      day: new Date(r.day).toISOString().slice(0, 10),
-      cost_micro_cents: Number(r.cost_micro_cents),
-      call_count: r.call_count,
-      loop_count: r.loop_count,
-      blocked_count: r.blocked_count,
-      routed_count: r.routed_count,
-    }));
+    // Index the aggregated rows by ISO date string so the JS-side fill
+    // is O(1) per day. `new Date(r.day)` handles both Postgres
+    // (returns a Date object) and SQLite (returns "YYYY-MM-DD" text
+    // from `date(created_at)`).
+    const byDay = new Map<
+      string,
+      Omit<DailyStats, "day">
+    >();
+    for (const r of rows) {
+      const iso = new Date(r.day as string | Date).toISOString().slice(0, 10);
+      byDay.set(iso, {
+        cost_micro_cents: Number(r.cost_micro_cents),
+        call_count: r.call_count,
+        loop_count: r.loop_count,
+        blocked_count: r.blocked_count,
+        routed_count: r.routed_count,
+      });
+    }
+
+    // Walk the N-day window backward from today (UTC, to match the
+    // DB's UTC day boundary) so the bar chart always has exactly
+    // `days` buckets. Missing days fill with zeros — same shape the
+    // old generate_series LEFT-JOIN path produced.
+    const out: DailyStats[] = [];
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(todayUtc);
+      d.setUTCDate(d.getUTCDate() - i);
+      const iso = d.toISOString().slice(0, 10);
+      const found = byDay.get(iso);
+      out.push({
+        day: iso,
+        cost_micro_cents: found?.cost_micro_cents ?? 0,
+        call_count: found?.call_count ?? 0,
+        loop_count: found?.loop_count ?? 0,
+        blocked_count: found?.blocked_count ?? 0,
+        routed_count: found?.routed_count ?? 0,
+      });
+    }
+    return out;
   },
   "getDailyStats"
 );
@@ -393,9 +434,18 @@ export async function getBudgetStatus(scope?: Scope): Promise<BudgetStatus[]> {
         FROM requests r
         WHERE r.project_id = b.project_id
           AND r.status = 'success'
-          AND r.created_at >= DATE_TRUNC(
-            CASE b.period WHEN 'daily' THEN 'day' ELSE 'month' END,
-            NOW()
+          AND r.created_at >= (
+            -- "Start of the current period". The Postgres path uses
+            -- DATE_TRUNC with a CASE expression for the unit, which my
+            -- SQLite shim's regex translator can't rewrite (it expects
+            -- a literal 'day' / 'month'). Expanded into a CASE that
+            -- picks between two pre-translated patterns — works on
+            -- both backends without runtime branching.
+            CASE b.period
+              WHEN 'daily'
+                THEN DATE_TRUNC('day', NOW())
+              ELSE DATE_TRUNC('month', NOW())
+            END
           )
       ), 0) AS spend_micro_cents
     FROM budgets b
@@ -715,8 +765,8 @@ export const getRecommendations = cacheStats(
   `;
   for (const row of wastefulRows) {
     // Conservative savings: assume we'd save ~80% by routing to gpt-4o-mini.
-    // Real ratio depends on model + token mix; 80% is the conservative
-    // floor seen in public policy-eval data for common downgrade paths.
+    // Real ratio depends on model + token mix; 80% is the floor we've seen
+    // in public coding-eval and internal route-pair checks.
     const cost = Number(row.total_cost_micro_cents);
     recs.push({
       kind: "wasteful_pattern",
@@ -884,23 +934,49 @@ export const getCacheSavingsMicroCents = cacheStats(
   "getCacheSavingsMicroCents"
 );
 
-// --- Unified savings breakdown (routing + cache) --------------------------
+// --- Unified savings breakdown (routing + cache + tool-compress) ---------
 //
-// The "saved $X" hero on the dashboard home. Deliberately excludes
-// loop-prevented and budget-blocked from the dollar number because those
-// are counterfactual — we never called upstream so we don't actually know
-// what would have been spent. Shown separately as counts, not dollars.
+// The "saved $X" hero on the dashboard home. Combines THREE distinct
+// dimensions of dollars-actually-not-spent:
+//
+//   1. routing_saving_micro_cents — the request was downgraded to a
+//      cheaper model than the caller asked for; what it would have
+//      cost on the asked-model minus what it actually cost.
+//   2. cache_savings_micro_cents — provider-side prompt-cache hits
+//      (anthropic ephemeral / OpenAI cached_tokens) that got billed
+//      at the cached rate vs the full input rate.
+//   3. tool_compress_micro_cents_saved_est — input tokens stripped
+//      from `tool` / `function` messages before forwarding upstream
+//      (TOKENSMART_TOOL_COMPRESS_ENABLED=1). Read from the `tags`
+//      JSONB column because it doesn't have a dedicated requests
+//      column — the compressor stamps it as a tag-string and we
+//      coerce back to bigint here.
+//
+// Loop-prevented and budget-blocked counts are NOT folded into the
+// dollar total because those are counterfactual: we never called
+// upstream so we don't actually know what would have been spent.
+// Shown separately as counts.
 
 export type SavingsBreakdown = {
   total_saving_micro_cents: number;
   routing_saving_micro_cents: number;
   cache_saving_micro_cents: number;
+  /**
+   * Estimated dollar value of input tokens stripped by the tool-result
+   * compressor (TOKENSMART_TOOL_COMPRESS_ENABLED). Zero when the
+   * compressor is off or no eligible tool messages were seen in the
+   * window. The estimate is conservative — see the compressor module
+   * for the chars/token ratio used.
+   */
+  tool_compress_saving_micro_cents: number;
   /** Total spend over the same window — lets the UI show "saved X of Y total". */
   total_spend_micro_cents: number;
   /** Requests that got downgraded to a cheaper model. */
   routing_request_count: number;
   /** Requests with at least one cached input token. */
   cache_hit_count: number;
+  /** Requests where the compressor rewrote at least one tool message. */
+  tool_compress_request_count: number;
   /** Blocked-before-upstream, counted separately (not in dollar total). */
   loops_prevented_count: number;
   budget_blocked_count: number;
@@ -912,9 +988,11 @@ export const getSavingsBreakdown = cacheStats(
       Array<{
         routing_saving: string;
         cache_saving: string;
+        tool_compress_saving: string;
         total_spend: string;
         routing_request_count: number;
         cache_hit_count: number;
+        tool_compress_request_count: number;
         loops_prevented_count: number;
         budget_blocked_count: number;
       }>
@@ -922,11 +1000,32 @@ export const getSavingsBreakdown = cacheStats(
       SELECT
         COALESCE(SUM(routing_saving_micro_cents), 0)::bigint AS routing_saving,
         COALESCE(SUM(cache_savings_micro_cents), 0)::bigint AS cache_saving,
+        -- Tool-result compressor savings live in the JSONB tags column
+        -- because they don't have a dedicated numeric column. The cast
+        -- chain (text -> bigint) silently drops any malformed value
+        -- and we COALESCE the row-level sum so a single bad row never
+        -- nukes the breakdown card. NULLIF guards the empty-string
+        -- case where the tag was set to "" by a future caller.
+        COALESCE(
+          SUM(
+            CASE
+              WHEN tags ? 'tool_compress_micro_cents_saved_est'
+                THEN COALESCE(
+                  NULLIF(tags->>'tool_compress_micro_cents_saved_est', '')::bigint,
+                  0
+                )
+              ELSE 0
+            END
+          ),
+          0
+        )::bigint AS tool_compress_saving,
         COALESCE(SUM(cost_micro_cents), 0)::bigint AS total_spend,
         COALESCE(SUM(CASE WHEN routing_saving_micro_cents > 0 THEN 1 ELSE 0 END), 0)::int
           AS routing_request_count,
         COALESCE(SUM(CASE WHEN cached_input_tokens > 0 THEN 1 ELSE 0 END), 0)::int
           AS cache_hit_count,
+        COALESCE(SUM(CASE WHEN tags->>'tool_compress_applied' = '1' THEN 1 ELSE 0 END), 0)::int
+          AS tool_compress_request_count,
         COALESCE(SUM(CASE WHEN status = 'loop_detected' THEN 1 ELSE 0 END), 0)::int
           AS loops_prevented_count,
         COALESCE(SUM(CASE WHEN status IN ('budget_exceeded', 'plan_limit_exceeded') THEN 1 ELSE 0 END), 0)::int
@@ -939,13 +1038,16 @@ export const getSavingsBreakdown = cacheStats(
     const row = rows[0];
     const routing = Number(row?.routing_saving ?? 0);
     const cache = Number(row?.cache_saving ?? 0);
+    const toolCompress = Number(row?.tool_compress_saving ?? 0);
     return {
-      total_saving_micro_cents: routing + cache,
+      total_saving_micro_cents: routing + cache + toolCompress,
       routing_saving_micro_cents: routing,
       cache_saving_micro_cents: cache,
+      tool_compress_saving_micro_cents: toolCompress,
       total_spend_micro_cents: Number(row?.total_spend ?? 0),
       routing_request_count: row?.routing_request_count ?? 0,
       cache_hit_count: row?.cache_hit_count ?? 0,
+      tool_compress_request_count: row?.tool_compress_request_count ?? 0,
       loops_prevented_count: row?.loops_prevented_count ?? 0,
       budget_blocked_count: row?.budget_blocked_count ?? 0,
     };
@@ -1590,6 +1692,41 @@ export const getSpendByTag = cacheStats(
     limit = 30,
     scope?: Scope
   ): Promise<SpendByTag[]> => {
+    // Postgres can fan out tags with `CROSS JOIN LATERAL
+    // jsonb_each_text(r.tags) kv`. SQLite's JSON1 extension has
+    // an equivalent table-valued function `json_each(r.tags)` whose
+    // syntax is `... FROM requests r, json_each(r.tags) kv ...` —
+    // structurally different enough that a regex translator can't
+    // bridge it. Branch on the active backend instead.
+    if (activeBackend() === "sqlite") {
+      const rows = await sql<
+        {
+          tag_key: string;
+          tag_value: string;
+          call_count: number;
+          total_cost_micro_cents: string;
+        }[]
+      >`
+        SELECT
+          kv.key   AS tag_key,
+          kv.value AS tag_value,
+          COUNT(*) AS call_count,
+          COALESCE(SUM(r.cost_micro_cents), 0) AS total_cost_micro_cents
+        FROM requests r, json_each(r.tags) kv
+        WHERE r.tags <> '{}'
+          AND (${projectScope(scope)})
+          AND r.created_at > NOW() - (${sinceDays} || ' days')::INTERVAL
+        GROUP BY kv.key, kv.value
+        ORDER BY total_cost_micro_cents DESC
+        LIMIT ${limit}
+      `;
+      return rows.map((r) => ({
+        tag_key: r.tag_key,
+        tag_value: String(r.tag_value),
+        call_count: Number(r.call_count),
+        total_cost_micro_cents: Number(r.total_cost_micro_cents),
+      }));
+    }
     const rows = await sql<
       {
         tag_key: string;
@@ -2167,19 +2304,33 @@ export const getTopLoops = cacheStats(
     limit = 5,
     scope?: Scope
   ): Promise<TopLoop[]> => {
+    // The "model" picked is the most recently seen model for this
+    // fingerprint inside the time window. Postgres can express that
+    // compactly with `(ARRAY_AGG(model ORDER BY created_at DESC))[1]`,
+    // but SQLite has no ARRAY_AGG and no ordered aggregate syntax.
+    // A correlated subquery picking ORDER BY ... LIMIT 1 works on
+    // BOTH backends and the planner handles it efficiently because
+    // `fingerprint` is indexed.
     return sql<TopLoop[]>`
       SELECT
-        fingerprint,
-        (ARRAY_AGG(model ORDER BY created_at DESC))[1] AS model,
+        r.fingerprint,
+        (
+          SELECT r2.model
+            FROM requests r2
+           WHERE r2.fingerprint = r.fingerprint
+             AND r2.created_at > NOW() - (${sinceHours} || ' hours')::INTERVAL
+           ORDER BY r2.created_at DESC
+           LIMIT 1
+        ) AS model,
         COUNT(*)::int AS total_attempts,
-        SUM(CASE WHEN status = 'loop_detected' THEN 1 ELSE 0 END)::int
+        SUM(CASE WHEN r.status = 'loop_detected' THEN 1 ELSE 0 END)::int
           AS blocked_attempts,
-        MAX(created_at) AS last_seen_at
-      FROM requests
-      WHERE fingerprint IS NOT NULL
+        MAX(r.created_at) AS last_seen_at
+      FROM requests r
+      WHERE r.fingerprint IS NOT NULL
         AND (${projectScope(scope)})
-        AND created_at > NOW() - (${sinceHours} || ' hours')::INTERVAL
-      GROUP BY fingerprint
+        AND r.created_at > NOW() - (${sinceHours} || ' hours')::INTERVAL
+      GROUP BY r.fingerprint
       HAVING COUNT(*) >= 3
       ORDER BY total_attempts DESC, last_seen_at DESC
       LIMIT ${limit}

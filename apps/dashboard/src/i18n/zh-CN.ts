@@ -516,9 +516,11 @@ export const zhCN: Dictionary = {
       "通过 TokSuan 发一次请求即可拿到第一份省钱回执。请求落地后会显示请求模型、实际模型、成本、节省与路由原因。",
     savingsHeroBreakdownRouting: "路由节省",
     savingsHeroBreakdownCache: "Prompt 缓存",
+    savingsHeroBreakdownToolCompress: "工具结果压缩",
     savingsHeroBreakdownPrevented: "另外拦截",
     savingsHeroRoutingNote: "{n} 个请求被下沉",
     savingsHeroCacheNote: "{n} 个请求命中缓存",
+    savingsHeroToolCompressNote: "{n} 个请求的工具输出被精简",
     savingsHeroPreventedNote: "{loops} 个失控循环 · {budget} 个超预算",
 
     receiptCardTitle: "最新一份省钱回执",
