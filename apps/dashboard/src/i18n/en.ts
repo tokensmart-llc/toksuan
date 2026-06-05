@@ -97,10 +97,10 @@ export const en: Dictionary = {
     navHermes: "Hermes",
     ctaSignedIn: "Go to dashboard",
     ctaAnonymous: "Sign in / Start free",
-    heroEyebrow: "Spend control and routing for AI agents",
+    heroEyebrow: "Spend control, routing, and context compression for AI agents",
     heroTitle: "Your AI agents should not surprise you with a bill.",
     heroSubtitle:
-      "TokSuan is operated by TokenSmart LLC and sits between your agents and model providers, making every request visible, capped, and safely routed. Simple turns stop burning frontier-model money; hard turns keep the quality they need.",
+      "TokSuan is operated by TokenSmart LLC and sits between your agents and model providers, making every request visible, capped, safely routed, and lighter before it reaches the LLM. Simple turns stop burning frontier-model money; bulky tool output stops replaying at full price.",
     heroPrimarySignedIn: "Go to dashboard",
     heroPrimaryAnonymous: "Start free with email",
     heroSecondaryEstimate: "Estimate savings",
@@ -119,7 +119,7 @@ export const en: Dictionary = {
     receiptQualityProof: "Quality proof",
     receiptQualityProofValue: "Quality checked",
     receiptDescription:
-      "A receipt tells your team what changed, why it changed, and whether the cheaper route is ready to promote.",
+      "A receipt tells your team what changed, why it changed, how much context was compressed, and whether the cheaper route is ready to promote.",
     aggregateEyebrow: "Aggregate proof",
     aggregateTitleVisible: "Verified savings tracked by TokSuan receipts.",
     aggregateTitleWarming: "Aggregate proof is warming up.",
@@ -167,11 +167,11 @@ export const en: Dictionary = {
     devEyebrow: "Developer friendly",
     devTitle: "Keep the SDK. Swap the gateway.",
     devBody:
-      "Cursor, OpenClaw, Hermes, LangChain, Vercel AI SDK, Cline, and internal bots can keep their OpenAI-compatible workflow. TokSuan adds the receipts, budgets, and routing layer in the middle.",
+      "Cursor, OpenClaw, Hermes, LangChain, Vercel AI SDK, Cline, and internal bots can keep their OpenAI-compatible workflow. TokSuan adds receipts, budgets, routing, and deterministic context compression in the middle.",
     whyEyebrow: "Why teams add a control plane",
-    whyTitle: "Model gateways give access. TokSuan makes routing decisions.",
+    whyTitle: "Model gateways give access. TokSuan controls spend.",
     whyBody:
-      "Agent workloads are not normal API traffic. They retry, call tools, branch into long sessions, and silently swap from cheap to frontier models. TokSuan decides when a turn can move down, when it must stay on an advanced model, and gives each decision a receipt.",
+      "Agent workloads are not normal API traffic. They retry, call tools, branch into long sessions, replay bulky context, and silently swap from cheap to frontier models. TokSuan decides when a turn can move down, when context can shrink, and when it must stay untouched — then gives each decision a receipt.",
     why1Title: "Bills arrive after the damage",
     why1Body: "Which agent, project, or prompt created the spike?",
     why2Title: "Agents repeat expensive mistakes",
@@ -183,7 +183,7 @@ export const en: Dictionary = {
     loopEyebrow: "Control loop",
     loopTitle: "See it, cap it, shrink it.",
     loopBody:
-      "Three product surfaces work together: a ledger for visibility, budget guards for control, and routing proof for safe savings.",
+      "Four product surfaces work together: a ledger for visibility, budget guards for control, routing proof for safe savings, and reversible context compression for bulky tool output.",
     bento1Pill: "Observe",
     bento1Title: "Every request becomes a receipt.",
     bento1Body:
@@ -197,9 +197,9 @@ export const en: Dictionary = {
     bento3Body:
       "Repeated fingerprints can be stopped before an agent burns the same turn again.",
     bento4Pill: "Optimize",
-    bento4Title: "Route cheaper only when the evidence is good enough.",
+    bento4Title: "Route cheaper and compress context only when the evidence is good enough.",
     bento4Body:
-      "Public benchmarks provide the day-one frontier. Shadow trials and project history teach TokSuan which provider works best for your agent over time.",
+      "Public benchmarks provide the day-one routing frontier. Audit/optimize compression modes show byte savings before prompts are rewritten, and reversible storage keeps original tool output available.",
     trustBand1Title: "No token markup",
     trustBand1Body:
       "Keep paying providers directly. TokSuan is the control layer, not a reseller.",
@@ -221,7 +221,7 @@ export const en: Dictionary = {
       "No. OpenRouter gives access to many models. TokSuan decides which model an agent turn should use, enforces budgets, and learns from your workload.",
     faq3Q: "Can I see the exact request that spent money?",
     faq3A:
-      "Yes. The ledger stores model, provider, tokens, latency, tags, cost, and receipt headers.",
+      "Yes. The ledger stores model, provider, tokens, latency, tags, cost, receipt headers, and, when reversible context compression is enabled, the original tool output.",
     faq4Q: "Will this hurt model quality?",
     faq4A:
       "Routes promote only when the policy and your receipts show the cheaper model is safe; shadow trials let you prove quality before switching production traffic.",
@@ -530,16 +530,16 @@ export const en: Dictionary = {
 
     savingsHeroLabel: "Saved · last 30 days",
     savingsHeroSubWithPct:
-      "{pct} off what the originally-requested models would have cost — via automatic routing to cheaper models plus prompt-cache discounts.",
+      "{pct} off what the originally-requested models would have cost — via automatic routing, prompt-cache discounts, and context compression.",
     savingsHeroSubEmpty:
       "Send a request through TokSuan to get the first saved-money receipt. The dashboard will show asked model, landed model, cost, saved cost, and routing reason once traffic lands.",
     savingsHeroBreakdownRouting: "Routing",
     savingsHeroBreakdownCache: "Prompt cache",
-    savingsHeroBreakdownToolCompress: "Tool-result compression",
+    savingsHeroBreakdownToolCompress: "Context compression",
     savingsHeroBreakdownPrevented: "Also prevented",
     savingsHeroRoutingNote: "{n} requests downgraded",
     savingsHeroCacheNote: "{n} requests cached",
-    savingsHeroToolCompressNote: "{n} requests with shrunk tool output",
+    savingsHeroToolCompressNote: "{n} requests with shrunk context",
     savingsHeroPreventedNote: "{loops} runaway loops · {budget} over-budget",
 
     receiptCardTitle: "Latest savings receipt",
@@ -1526,6 +1526,14 @@ export const en: Dictionary = {
     loopTimelineAriaTpl: "{n} call timeline",
 
     errorTitle: "Error",
+
+    contextCompressionTitle: "Context compression originals",
+    contextCompressionBody:
+      "TokSuan compressed this tool/function message before forwarding it upstream. Reversible storage is enabled, so the original bytes are retained here for audit and recovery.",
+    contextCompressionOriginal: "Original content",
+    contextCompressionCompressed: "Compressed content",
+    contextCompressionSavedPrefix: "saved ",
+    contextCompressionSavedSuffix: " chars",
 
     rawRequestBody: "Raw request body",
     rawResponseBody: "Raw response body",
@@ -2673,10 +2681,10 @@ export const en: Dictionary = {
 
     workloadAgentLabel: "Heavy agent (Cline / LangGraph / autonomous loops)",
     workloadAgentExplainer:
-      "Agent traffic is the best fit because repeated planning/tool loops create routing and loop-prevention opportunities. The high end requires real traffic proof, not just the quick estimate.",
+      "Agent traffic is the best fit because repeated planning/tool loops create routing, loop-prevention, and context-compression opportunities. The high end requires real traffic proof, not just the quick estimate.",
     workloadIdeLabel: "IDE assistant (Cursor / Continue / Copilot-style)",
     workloadIdeExplainer:
-      "IDE traffic often has many short prompts that can route down, but the exact gain depends on how much of your workload already uses cheap models.",
+      "IDE traffic often has many short prompts that can route down, plus repeated tool output, diffs, and stack traces that can compress. The exact gain depends on how much already uses cheap models.",
     workloadChatLabel: "Chat / customer support",
     workloadChatExplainer:
       "Mixed complexity makes routing more conservative. Long system prompts and repeated context can still unlock cache savings, especially on Anthropic.",
@@ -2767,7 +2775,7 @@ export const en: Dictionary = {
     breakdownWhyMid:
       "Mid-tier — trivial prompts route to mini/haiku/flash",
     breakdownWhyCheap:
-      "Already cheap — gains mostly from prompt-cache",
+      "Already cheap — gains mostly from prompt-cache and context compression",
     breakdownWhyUnknown:
       "Unclassified — assumed mid-tier conservatively",
     breakdownTopNFooter:
@@ -2775,9 +2783,9 @@ export const en: Dictionary = {
 
     howTitle: "How we estimated this",
     howCsvBody:
-      "Per-model heuristic: frontier models (gpt-5*, claude-opus*, o3/o4*) get 35–55% routing savings in the planner. Mid-tier (gpt-4o, sonnet, gemini-pro) gets 20–35%. Already-cheap models (mini/haiku/flash) get 0–5% routing plus possible prompt-cache. Anthropic family gets a conservative +10–18% cache_control bonus.",
+      "Per-model heuristic: frontier models (gpt-5*, claude-opus*, o3/o4*) get 35–55% routing savings in the planner. Mid-tier (gpt-4o, sonnet, gemini-pro) gets 20–35%. Already-cheap models (mini/haiku/flash) get 0–5% routing plus possible prompt-cache. Anthropic family gets a conservative +10–18% cache_control bonus. Agent and IDE workloads may see additional input-token savings from context compression when they replay large tool outputs; TokSuan measures that separately in audit/optimize mode and shows it as Context compression in the dashboard.",
     howFooter:
-      "The ranges start from TokSuan's public baseline policy run (`public_agent_eval_mix` across frontier models), then we deliberately haircut them for pre-sales use. Pretending we can predict your exact savings to the dollar would be dishonest. The product's job is to turn this estimate into a receipt: asked model, landed model, actual cost, saved cost, and quality evidence from shadow A/B where you enable it.",
+      "The ranges start from TokSuan's public baseline policy run (`public_agent_eval_mix` across frontier models), then we deliberately haircut them for pre-sales use. Pretending we can predict your exact savings to the dollar would be dishonest. The product's job is to turn this estimate into a receipt: asked model, landed model, actual cost, saved cost, context-compression bytes saved, and quality evidence from shadow A/B where you enable it.",
     howSelfHostNote:
       "For paid API models, savings are dollar savings from published token prices. For self-hosted or custom endpoints, TokSuan can show that traffic moved off a large-model endpoint, but exact dollar savings require your GPU / endpoint cost metadata.",
 

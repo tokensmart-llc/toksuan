@@ -208,6 +208,46 @@ export async function getRequestById(
   return rows[0] ?? null;
 }
 
+export type CompressedBlobDetail = {
+  message_index: number;
+  strategy: string;
+  hash: string;
+  original_content: string;
+  compressed_content: string;
+  original_chars: number;
+  compressed_chars: number;
+};
+
+/**
+ * M4: Request-detail companion query for reversible context compression.
+ *
+ * The gateway stores pre-compression originals in `compressed_blobs` only
+ * when TOKENSMART_CONTEXT_COMPRESS_STORE=1. Dashboard reads the table
+ * directly because it shares the same DB trust boundary as the ledger. Scope
+ * is enforced by joining back to `requests` and applying the normal project
+ * scope to the request row, so a user cannot fetch blobs for another project.
+ */
+export async function getCompressedBlobsByRequestId(
+  requestId: string,
+  scope?: Scope
+): Promise<CompressedBlobDetail[]> {
+  return sql<CompressedBlobDetail[]>`
+    SELECT
+      b.message_index,
+      b.strategy,
+      b.hash,
+      b.original_content,
+      b.compressed_content,
+      b.original_chars,
+      b.compressed_chars
+    FROM compressed_blobs b
+    JOIN requests r ON r.id = b.request_id
+    WHERE b.request_id = ${requestId}
+      AND (${projectScopeForAlias(scope, "r")})
+    ORDER BY b.message_index ASC
+  `;
+}
+
 export type FingerprintNeighbor = {
   id: string;
   created_at: Date;

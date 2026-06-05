@@ -1483,6 +1483,14 @@ export type Dictionary = {
     /** Error card. */
     errorTitle: string;
 
+    /** Reversible context compression originals. */
+    contextCompressionTitle: string;
+    contextCompressionBody: string;
+    contextCompressionOriginal: string;
+    contextCompressionCompressed: string;
+    contextCompressionSavedPrefix: string;
+    contextCompressionSavedSuffix: string;
+
     /** Prompt + response sections. */
     rawRequestBody: string;
     rawResponseBody: string;

@@ -288,6 +288,33 @@ const EnvSchema = z.object({
    */
   TOKENSMART_TOOL_COMPRESS_EXCLUDE_TOOLS: z.string().optional(),
 
+  // --- Context compression pipeline (M1-M4) -----------------------------
+  /**
+   * Compression mode. Supersedes TOKENSMART_TOOL_COMPRESS_ENABLED when set:
+   *   - off       — pipeline never runs (default).
+   *   - audit     — measure potential savings, DO NOT rewrite the prompt.
+   *                 Stamps `context_compress_*` tags for a dry-run receipt.
+   *   - optimize  — actually compress tool/function messages upstream
+   *                 (same effect as the legacy TOKENSMART_TOOL_COMPRESS_ENABLED=1).
+   * Per-call override header: `x-ts-context-compress: off|audit|optimize`
+   * (can only downgrade relative to the project default).
+   */
+  TOKENSMART_CONTEXT_COMPRESS_MODE: z
+    .enum(["off", "audit", "optimize"])
+    .optional(),
+  /** Enable the JSON SmartCrusher strategy (arrays / object-with-arrays). Default on. */
+  TOKENSMART_CONTEXT_COMPRESS_CRUSH_JSON: z.string().default("1"),
+  /** Arrays shorter than this are never crushed (just minified). Default 10. */
+  TOKENSMART_CONTEXT_COMPRESS_MIN_ITEMS: z.coerce.number().default(10),
+  /** Upper bound on items kept after a crush. Default 20. */
+  TOKENSMART_CONTEXT_COMPRESS_MAX_ITEMS: z.coerce.number().default(20),
+  /**
+   * Reversible compression: persist pre-compression originals in
+   * `compressed_blobs` so operators can retrieve them. Off by default;
+   * only consulted in optimize mode.
+   */
+  TOKENSMART_CONTEXT_COMPRESS_STORE: z.string().default("0"),
+
   // --- CORS ---------------------------------------------------------------
   /**
    * Comma-separated list of Origins that browsers are allowed to make

@@ -92,7 +92,7 @@ export const zhCN: Dictionary = {
 
   landing: {
     metaDescription:
-      "只改一行 base_url，让 AI agent 的每次请求都可见、可限额，并在回执验证安全后自动走更便宜的模型。",
+      "只改一行 base_url，让 AI agent 的每次请求都可见、可限额，并在回执验证安全后自动走更便宜的模型，同时压缩臃肿工具上下文。",
     navStateOfSpend: "成本现状",
     navEstimate: "节省评估",
     navTrust: "安全",
@@ -100,10 +100,10 @@ export const zhCN: Dictionary = {
     navHermes: "Hermes",
     ctaSignedIn: "进入 Dashboard",
     ctaAnonymous: "登录 / 免费开始",
-    heroEyebrow: "面向 AI Agent 的成本控制与路由",
+    heroEyebrow: "面向 AI Agent 的成本控制、路由与上下文压缩",
     heroTitle: "AI agent 不该让你看到账单时才发现问题。",
     heroSubtitle:
-      "TokSuan 由 TokenSmart LLC 运营，接在你的 agent 与各家模型服务商之间，让每一次请求可见、可限额，并在安全前提下路由到更合适的模型。简单的 turn 不再消耗旗舰模型预算，复杂的 turn 仍保留所需质量。",
+      "TokSuan 由 TokenSmart LLC 运营，接在你的 agent 与各家模型服务商之间，让每一次请求可见、可限额、可安全路由，并在进入 LLM 前压缩臃肿上下文。简单的 turn 不再消耗旗舰模型预算，重复工具输出也不再按原价反复计费。",
     heroPrimarySignedIn: "进入 Dashboard",
     heroPrimaryAnonymous: "用邮箱免费开始",
     heroSecondaryEstimate: "评估节省空间",
@@ -122,7 +122,7 @@ export const zhCN: Dictionary = {
     receiptQualityProof: "质量校验",
     receiptQualityProofValue: "质量已校验",
     receiptDescription:
-      "回执把每次请求做了什么、为什么这样路由、是否可推全部讲清楚，方便团队复核与决策。",
+      "回执把每次请求做了什么、为什么这样路由、压缩了多少上下文、是否可推全部讲清楚，方便团队复核与决策。",
     aggregateEyebrow: "聚合证据",
     aggregateTitleVisible: "TokSuan 回执已经记录到可公开的验证节省。",
     aggregateTitleWarming: "聚合证据正在积累。",
@@ -170,11 +170,11 @@ export const zhCN: Dictionary = {
     devEyebrow: "对开发者友好",
     devTitle: "保留你的 SDK，只换网关。",
     devBody:
-      "Cursor、OpenClaw、Hermes、LangChain、Vercel AI SDK、Cline 以及内部机器人都可以保留 OpenAI 兼容的工作流，TokSuan 在中间补上回执、预算与路由层。",
+      "Cursor、OpenClaw、Hermes、LangChain、Vercel AI SDK、Cline 以及内部机器人都可以保留 OpenAI 兼容的工作流，TokSuan 在中间补上回执、预算、路由与确定性上下文压缩层。",
     whyEyebrow: "为什么团队需要一个控制层",
-    whyTitle: "模型网关提供访问，TokSuan 做路由决策。",
+    whyTitle: "模型网关提供访问，TokSuan 控制花费。",
     whyBody:
-      "Agent 流量并不是普通 API 流量：会重试、会调用工具、会跨多轮长会话，且很容易在用户毫不知情时从便宜模型切到旗舰模型。TokSuan 决定哪一轮可以下沉到更便宜的模型、哪一轮必须保留旗舰模型，并为每一次决策留下回执。",
+      "Agent 流量并不是普通 API 流量：会重试、会调用工具、会跨多轮长会话、会反复 replay 臃肿上下文，且很容易在用户毫不知情时从便宜模型切到旗舰模型。TokSuan 决定哪一轮可以下沉、哪些上下文可以压缩、哪些内容必须保持原样，并为每一次决策留下回执。",
     why1Title: "账单总是事后才发现",
     why1Body: "到底是哪一个 agent、哪一个项目、哪一段 prompt 把成本拉高了？",
     why2Title: "Agent 会重复犯昂贵的错误",
@@ -184,7 +184,7 @@ export const zhCN: Dictionary = {
     loopEyebrow: "控制闭环",
     loopTitle: "看清、限制、收敛。",
     loopBody:
-      "三块产品共同工作：用账本实现可见，用预算守门提供控制，用路由证据在安全前提下持续省钱。",
+      "四块产品共同工作：用账本实现可见，用预算守门提供控制，用路由证据安全省钱，用可逆上下文压缩降低臃肿工具输出的 input token。",
     bento1Pill: "观测",
     bento1Title: "每次请求都成为一份回执。",
     bento1Body:
@@ -197,9 +197,9 @@ export const zhCN: Dictionary = {
     bento3Body:
       "重复出现的请求指纹可以在 agent 再次烧钱之前被拦下来。",
     bento4Pill: "优化",
-    bento4Title: "证据足够时，才走更便宜的模型。",
+    bento4Title: "证据足够时，才下沉模型并压缩上下文。",
     bento4Body:
-      "公开 benchmark 提供第一天的成本-质量前沿，shadow 试验与项目历史让 TokSuan 学到最适合你 agent 的服务商组合。",
+      "公开 benchmark 提供第一天的路由前沿；audit / optimize 压缩模式先展示字节节省，再决定是否改写 prompt；可逆存储保留原始工具输出。",
     trustBand1Title: "不抽 token 差价",
     trustBand1Body:
       "你直接付服务商的费用，TokSuan 是控制层，不做转售。",
@@ -221,7 +221,7 @@ export const zhCN: Dictionary = {
       "不是。OpenRouter 提供多模型访问，TokSuan 决定每一次 agent turn 应该走哪个模型，强制预算，并基于你的工作流持续学习。",
     faq3Q: "能看到具体哪一次请求花了多少钱吗？",
     faq3A:
-      "可以。账本记录模型、服务商、token、延迟、tag、成本及回执 header。",
+      "可以。账本记录模型、服务商、token、延迟、tag、成本及回执 header；开启可逆上下文压缩后，还能查看原始工具输出。",
     faq4Q: "会不会牺牲模型质量？",
     faq4A:
       "只有当策略与回执显示便宜模型在你的场景下安全时才会推全；shadow 试验让你在切换生产流量前先验证质量。",
@@ -511,16 +511,16 @@ export const zhCN: Dictionary = {
 
     savingsHeroLabel: "近 30 天节省",
     savingsHeroSubWithPct:
-      "比按最初请求的模型计算便宜了 {pct}，来自自动路由到更便宜的模型与 prompt-cache 折扣。",
+      "比按最初请求的模型计算便宜了 {pct}，来自自动路由、prompt-cache 折扣与上下文压缩。",
     savingsHeroSubEmpty:
       "通过 TokSuan 发一次请求即可拿到第一份省钱回执。请求落地后会显示请求模型、实际模型、成本、节省与路由原因。",
     savingsHeroBreakdownRouting: "路由节省",
     savingsHeroBreakdownCache: "Prompt 缓存",
-    savingsHeroBreakdownToolCompress: "工具结果压缩",
+    savingsHeroBreakdownToolCompress: "上下文压缩",
     savingsHeroBreakdownPrevented: "另外拦截",
     savingsHeroRoutingNote: "{n} 个请求被下沉",
     savingsHeroCacheNote: "{n} 个请求命中缓存",
-    savingsHeroToolCompressNote: "{n} 个请求的工具输出被精简",
+    savingsHeroToolCompressNote: "{n} 个请求的上下文被精简",
     savingsHeroPreventedNote: "{loops} 个失控循环 · {budget} 个超预算",
 
     receiptCardTitle: "最新一份省钱回执",
@@ -1490,6 +1490,14 @@ export const zhCN: Dictionary = {
     loopTimelineAriaTpl: "{n} 次调用时间线",
 
     errorTitle: "错误",
+
+    contextCompressionTitle: "上下文压缩原文",
+    contextCompressionBody:
+      "TokSuan 在转发 upstream 前压缩了这条 tool / function 消息。由于已开启可逆存储，原始字节会保留在这里，便于审计与恢复。",
+    contextCompressionOriginal: "压缩前原文",
+    contextCompressionCompressed: "压缩后内容",
+    contextCompressionSavedPrefix: "节省 ",
+    contextCompressionSavedSuffix: " 字符",
 
     rawRequestBody: "原始请求体",
     rawResponseBody: "原始响应体",
@@ -2599,10 +2607,10 @@ export const zhCN: Dictionary = {
 
     workloadAgentLabel: "重度 agent（Cline / LangGraph / 自主循环）",
     workloadAgentExplainer:
-      "Agent 流量最适合接入 — 反复的规划 / 工具调用循环带来路由与拦截重复的空间。区间上端需要真实流量验证，仅靠快速估算还不够。",
+      "Agent 流量最适合接入 — 反复的规划 / 工具调用循环带来路由、拦截重复与上下文压缩空间。区间上端需要真实流量验证，仅靠快速估算还不够。",
     workloadIdeLabel: "IDE 助手（Cursor / Continue / Copilot 类）",
     workloadIdeExplainer:
-      "IDE 流量通常是大量短 prompt，可下沉路由；具体收益取决于已经有多少调用走的是便宜模型。",
+      "IDE 流量通常是大量短 prompt，可下沉路由；同时会反复 replay 工具输出、diff 与 stack trace，可触发上下文压缩。具体收益取决于已经有多少调用走的是便宜模型。",
     workloadChatLabel: "对话 / 客服",
     workloadChatExplainer:
       "复杂度混合，路由会更保守。长 system prompt 与重复上下文仍可解锁缓存节省，Anthropic 上尤为明显。",
@@ -2693,7 +2701,7 @@ export const zhCN: Dictionary = {
     breakdownWhyMid:
       "中等档 — 简单 prompt 可下沉到 mini / haiku / flash",
     breakdownWhyCheap:
-      "本就便宜 — 主要靠 prompt 缓存获益",
+      "本就便宜 — 主要靠 prompt 缓存与上下文压缩获益",
     breakdownWhyUnknown:
       "未分类 — 保守按中等档估算",
     breakdownTopNFooter:
@@ -2701,9 +2709,9 @@ export const zhCN: Dictionary = {
 
     howTitle: "估算逻辑",
     howCsvBody:
-      "按模型启发式：旗舰模型（gpt-5*、claude-opus*、o3 / o4*）规划路由节省 35–55%；中等档（gpt-4o、sonnet、gemini-pro）20–35%；本就便宜的模型（mini / haiku / flash）路由节省 0–5%，叠加可能的 prompt 缓存。Anthropic 家族额外保守加 10–18% 的 cache_control 红利。",
+      "按模型启发式：旗舰模型（gpt-5*、claude-opus*、o3 / o4*）规划路由节省 35–55%；中等档（gpt-4o、sonnet、gemini-pro）20–35%；本就便宜的模型（mini / haiku / flash）路由节省 0–5%，叠加可能的 prompt 缓存。Anthropic 家族额外保守加 10–18% 的 cache_control 红利。Agent 与 IDE 工作流在反复 replay 大型工具输出时，还可能通过上下文压缩获得额外 input-token 节省；TokSuan 会在 audit / optimize 模式下单独计量，并在 Dashboard 中显示为上下文压缩。",
     howFooter:
-      "区间来自 TokSuan 公开 baseline 策略运行（旗舰模型上的 `public_agent_eval_mix`），并对售前用途做了刻意的保守缩水。装作能精确预测节省到美元那是不诚实的；产品的工作是把这个估算变成回执 — 请求模型、实际模型、实际成本、节省金额，以及在你启用 shadow A/B 时给出的质量证据。",
+      "区间来自 TokSuan 公开 baseline 策略运行（旗舰模型上的 `public_agent_eval_mix`），并对售前用途做了刻意的保守缩水。装作能精确预测节省到美元那是不诚实的；产品的工作是把这个估算变成回执 — 请求模型、实际模型、实际成本、节省金额、上下文压缩字节数，以及在你启用 shadow A/B 时给出的质量证据。",
     howSelfHostNote:
       "对付费 API 模型，节省金额按公开 token 价计算。对自部署或自定义 endpoint，TokSuan 可以证明流量从大模型 endpoint 切走，但精确的金额节省需要你提供 GPU / endpoint 成本元数据。",
 

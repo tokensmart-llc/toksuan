@@ -24,6 +24,7 @@ import {
   compressContent,
   detectShape,
   estimateTokensFromChars,
+  DEFAULT_POLICY,
   type CompressionPolicy,
   type CompressionShape,
 } from "../src/tool-result-compressor";
@@ -142,7 +143,9 @@ const FIXTURES: Array<{ name: string; expected: CompressionShape; build: () => s
 // ---------------------------------------------------------------------------
 
 const POLICY: CompressionPolicy = {
+  ...DEFAULT_POLICY,
   enabled: true,
+  mode: "optimize",
   minMessageChars: 500,
   maxCompressedChars: 4000,
   stripAnsi: true,

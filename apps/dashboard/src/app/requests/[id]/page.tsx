@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import { getScope } from "@/lib/auth";
 import { getDictionary } from "@/lib/i18n.server";
 import {
+  getCompressedBlobsByRequestId,
   getFingerprintNeighbors,
   getRequestById,
+  type CompressedBlobDetail,
   type FingerprintNeighbor,
   type RequestDetail,
 } from "@/lib/db";
@@ -112,10 +114,14 @@ export default async function Page({
 
   let detail: RequestDetail | null = null;
   let neighbors: FingerprintNeighbor[] = [];
+  let compressedBlobs: CompressedBlobDetail[] = [];
   let dbError: string | null = null;
   try {
     const scope = await getScope();
     detail = await getRequestById(id, scope);
+    if (detail) {
+      compressedBlobs = await getCompressedBlobsByRequestId(id, scope);
+    }
     if (detail?.fingerprint) {
       neighbors = await getFingerprintNeighbors(
         detail.fingerprint,
@@ -554,6 +560,46 @@ TOKENSMART_INTERNAL_TOKEN=<paste-here>`}
           </div>
           <pre className="code-block">{assistantText}</pre>
         </div>
+      )}
+
+      {compressedBlobs.length > 0 && (
+        <details className="card details-card" open>
+          <summary className="card-header details-summary">
+            <h2>{tReq.contextCompressionTitle}</h2>
+            <div className="card-header-spacer" />
+            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+              {compressedBlobs.length}
+            </span>
+            <span className="details-toggle" aria-hidden="true" />
+          </summary>
+          <div style={{ display: "grid", gap: 14 }}>
+            <p className="tagline" style={{ margin: 0 }}>
+              {tReq.contextCompressionBody}
+            </p>
+            {compressedBlobs.map((blob) => (
+              <div key={`${blob.message_index}:${blob.hash}`} className="message">
+                <div className="message-role">
+                  message[{blob.message_index}] · {blob.strategy} ·{" "}
+                  {tReq.contextCompressionSavedPrefix}
+                  {fmtNum(blob.original_chars - blob.compressed_chars)}
+                  {tReq.contextCompressionSavedSuffix}
+                </div>
+                <details>
+                  <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
+                    {tReq.contextCompressionOriginal}
+                  </summary>
+                  <pre className="code-block">{blob.original_content}</pre>
+                </details>
+                <details>
+                  <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
+                    {tReq.contextCompressionCompressed}
+                  </summary>
+                  <pre className="code-block">{blob.compressed_content}</pre>
+                </details>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       <details className="card details-card">

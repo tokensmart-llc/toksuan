@@ -21,6 +21,7 @@ import {
 import { findProviderTemplate } from "../config";
 import { fingerprintRequest } from "../fingerprint";
 import { runAlertTest } from "../alerts";
+import { getCompressedBlobsForRequest } from "../compression/store";
 
 export const internalRoutes = new Hono();
 
@@ -384,4 +385,79 @@ internalRoutes.post("/internal/test-alert", async (c) => {
   const ok = attempted.length > 0 && attempted.every((r) => r.ok);
 
   return c.json({ ok, webhook: result.webhook, email: result.email }, 200);
+});
+
+/**
+ * Reversible compression retrieve (M4). Returns the pre-compression
+ * originals stored for a request when the operator enabled
+ * TOKENSMART_CONTEXT_COMPRESS_STORE=1. Scoped to a project so a caller
+ * can never read another tenant's blobs.
+ *
+ * Auth: same TOKENSMART_INTERNAL_TOKEN gate as the other internal
+ * endpoints — the dashboard calls this server-to-server to render a
+ * "view original" panel on the request-detail page.
+ *
+ *   GET /internal/compressed?project_id=<uuid>&request_id=<uuid>
+ *
+ * Response: { ok: true, blobs: [{ message_index, strategy, hash,
+ *   original_content, compressed_content, original_chars,
+ *   compressed_chars }] }
+ */
+internalRoutes.get("/internal/compressed", async (c) => {
+  if (!internalEndpointsEnabled()) {
+    return c.json(
+      {
+        ok: false,
+        error:
+          "Internal endpoints disabled. Set TOKENSMART_INTERNAL_REPLAY_ENABLED=1 on the gateway to enable.",
+      },
+      503
+    );
+  }
+  const expectedToken = process.env.TOKENSMART_INTERNAL_TOKEN;
+  if (!expectedToken) {
+    return c.json(
+      {
+        ok: false,
+        error:
+          "Internal endpoints disabled. Set TOKENSMART_INTERNAL_TOKEN on the gateway and dashboard to enable.",
+      },
+      503
+    );
+  }
+  const presented = c.req.header("x-tokensmart-internal-token") ?? "";
+  if (!internalTokenMatches(presented, expectedToken)) {
+    return c.json({ ok: false, error: "Invalid internal token" }, 401);
+  }
+
+  const projectId = c.req.query("project_id") ?? null;
+  const requestId = c.req.query("request_id");
+  if (!requestId) {
+    return c.json(
+      { ok: false, error: "Missing required query param: request_id." },
+      400
+    );
+  }
+
+  try {
+    const blobs = await getCompressedBlobsForRequest(projectId, requestId);
+    return c.json(
+      {
+        ok: true,
+        blobs: blobs.map((b) => ({
+          message_index: b.message_index,
+          strategy: b.strategy,
+          hash: b.hash,
+          original_content: b.original_content,
+          compressed_content: b.compressed_content,
+          original_chars: b.original_chars,
+          compressed_chars: b.compressed_chars,
+        })),
+      },
+      200
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json({ ok: false, error: msg }, 500);
+  }
 });

@@ -67,10 +67,12 @@ import {
 import { newSpanId, newTraceId, recordSpan } from "../otel";
 import {
   buildPolicyFromEnv as buildToolCompressPolicy,
-  compressMessages as compressToolMessages,
+  compressContextMessages,
   estimateTokensFromChars as estimateCompressedTokens,
+  resolveRequestMode,
   type CompressionPolicy as ToolCompressPolicy,
-} from "../tool-result-compressor";
+} from "../compression";
+import { storeCompressedBlobs } from "../compression/store";
 
 // Built once at boot from process.env. The compressor is a pure module
 // so re-deriving the policy per request would just be wasted work — env
@@ -764,6 +766,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   // never null. Bad headers → empty object, not error.
   const tags = parseAttributionHeaders((name: string) => c.req.header(name));
   const classifierModelOverride = c.req.header("x-ts-classifier-model") ?? null;
+  let compressedBlobEntries: Parameters<typeof storeCompressedBlobs>[2] = [];
   // If the request used a prompt template (filled in below), we'll stamp
   // its name+version onto the same `tags` map so the dashboard can group
   // spend by template version without a schema change.
@@ -837,37 +840,78 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   // Per-call escape hatch: send `x-ts-tool-compress: off` to bypass.
   // Useful when the agent is doing a one-off "give me the literal output"
   // workflow that would be hurt by compression.
-  if (TOOL_COMPRESS_POLICY.enabled) {
-    const headerVal = (c.req.header("x-ts-tool-compress") ?? "").trim().toLowerCase();
-    const callerOptedOut = headerVal === "off" || headerVal === "0" || headerVal === "false";
-    if (!callerOptedOut) {
-      const { messages: compressed, result } = compressToolMessages(
-        body.messages as Parameters<typeof compressToolMessages>[0],
-        TOOL_COMPRESS_POLICY
+  // Resolve the effective mode from the project policy + per-call header.
+  // Headers honored: `x-ts-context-compress` (new) and the legacy
+  // `x-ts-tool-compress` (back-compat). Either can only DOWNGRADE
+  // (e.g. `off`) relative to the project default — a header can never
+  // turn compression ON for a project that didn't opt in.
+  if (TOOL_COMPRESS_POLICY.mode !== "off") {
+    const headerVal =
+      c.req.header("x-ts-context-compress") ??
+      c.req.header("x-ts-tool-compress") ??
+      null;
+    const mode = resolveRequestMode(TOOL_COMPRESS_POLICY.mode, headerVal);
+    if (mode !== "off") {
+      // Snapshot originals BEFORE rewrite so the reversible store (M4) can
+      // persist the untouched bytes. `compressContextMessages` returns a
+      // NEW array in optimize mode, leaving this one intact.
+      const originalMessages = body.messages as Array<{ content?: unknown }>;
+      const { messages: compressed, result } = compressContextMessages(
+        body.messages as Parameters<typeof compressContextMessages>[0],
+        TOOL_COMPRESS_POLICY,
+        mode
       );
-      if (result.applied) {
-        // Replace the messages array with the compressed view. We do NOT
-        // re-clone the whole body — `compressToolMessages` returns a new
-        // top-level array and only mutates the entries it actually
-        // rewrote (other entries are forwarded by reference). The
-        // request_body we eventually persist will reflect the compressed
-        // form: that's intentional, because operators auditing a
-        // request need to see what we actually sent upstream, not what
-        // the client originally typed. The originalChars stamp on tags
-        // preserves the audit breadcrumb.
-        body.messages = compressed as typeof body.messages;
-        const tokensSavedEst = estimateCompressedTokens(result.totalCharsSaved);
-        tags.tool_compress_applied = "1";
-        tags.tool_compress_chars_saved = String(result.totalCharsSaved);
-        tags.tool_compress_tokens_saved_est = String(tokensSavedEst);
-        tags.tool_compress_messages_count = String(result.perMessage.length);
-        // First-shape wins for the tag value when multiple messages
-        // were compressed — gives operators a quick "what KIND of
-        // tool output is dominating my spend" signal without bloating
-        // the tag schema. Full per-message detail is recoverable
-        // from the compressor's deterministic output if needed.
+      const charsSaved = result.totalCharsSaved;
+      if (charsSaved > 0 && result.perMessage.length > 0) {
+        const tokensSavedEst = estimateCompressedTokens(charsSaved);
+
+        // Legacy `tool_compress_*` tags drive the dashboard's realized
+        // savings hero. Stamp them ONLY when we actually rewrote the
+        // prompt (optimize) so audit dry-runs never inflate the card.
+        if (result.applied) {
+          body.messages = compressed as typeof body.messages;
+          tags.tool_compress_applied = "1";
+          tags.tool_compress_chars_saved = String(charsSaved);
+          tags.tool_compress_tokens_saved_est = String(tokensSavedEst);
+          tags.tool_compress_messages_count = String(result.perMessage.length);
+          if (result.perMessage[0]) {
+            tags.tool_compress_shape = result.perMessage[0].shape;
+          }
+        }
+
+        // New `context_compress_*` tags carry the richer receipt and fire
+        // in BOTH audit and optimize so operators can A/B "what would we
+        // have saved" before flipping a project to optimize.
+        tags.context_compress_mode = mode;
+        tags.context_compress_chars_saved = String(charsSaved);
+        tags.context_compress_tokens_saved_est = String(tokensSavedEst);
+        tags.context_compress_messages_count = String(result.perMessage.length);
         if (result.perMessage[0]) {
-          tags.tool_compress_shape = result.perMessage[0].shape;
+          tags.context_compress_shape = result.perMessage[0].shape;
+        }
+
+        // M4: reversible store. Capture the originals for the messages we
+        // actually rewrote (optimize only). We persist them only AFTER the
+        // request row exists, because the Postgres table has a FK to
+        // requests(id). Storing here would fail every time on a fresh id.
+        if (result.applied && TOOL_COMPRESS_POLICY.store) {
+          const entries = result.perMessage
+            .map((pm) => {
+              const orig = originalMessages[pm.index]?.content;
+              const comp = (compressed[pm.index] as { content?: unknown })?.content;
+              if (typeof orig !== "string" || typeof comp !== "string") return null;
+              return {
+                messageIndex: pm.index,
+                strategy: pm.shape,
+                original: orig,
+                compressed: comp,
+              };
+            })
+            .filter((e): e is NonNullable<typeof e> => e !== null);
+          if (entries.length > 0) {
+            tags.context_compress_stored = "1";
+            compressedBlobEntries = entries;
+          }
         }
       }
     }
@@ -1734,6 +1778,19 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
           console.error("Failed to insert streamed request:", e);
           return null;
         });
+        if (inserted && compressedBlobEntries.length > 0) {
+          await storeCompressedBlobs(
+            apiKey.project_id,
+            requestId,
+            compressedBlobEntries
+          ).catch((e) =>
+            console.warn(
+              `[context-compress] blob store failed for ${requestId}: ${
+                e instanceof Error ? e.message : String(e)
+              }`
+            )
+          );
+        }
 
         recordSpan({
           traceId,
@@ -2022,6 +2079,19 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     console.error("Failed to insert request:", e);
     return null;
   });
+  if (inserted && compressedBlobEntries.length > 0) {
+    await storeCompressedBlobs(
+      apiKey.project_id,
+      requestId,
+      compressedBlobEntries
+    ).catch((e) =>
+      console.warn(
+        `[context-compress] blob store failed for ${requestId}: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      )
+    );
+  }
   await releaseReservedBudget();
 
   // OTel: one span per request. The dashboard request-detail URL is the

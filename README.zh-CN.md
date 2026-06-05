@@ -1,8 +1,8 @@
 # TokSuan
 
-> **面向 AI agent 的花费控制与模型路由网关。**
+> **面向 AI agent 的花费控制、模型路由与上下文压缩网关。**
 > 让每一轮 agent 调用都可见、可限额，并且只在回执证明安全时
-> 自动路由到更便宜的模型。
+> 自动路由到更便宜的模型；同时在上下文进入 LLM 前压缩臃肿的工具输出。
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
@@ -40,6 +40,7 @@ curl https://gateway.tokensmt.com/v1/chat/completions \
 | 循环调用可能在你发现前烧掉预算 | 日 / 月预算、循环检测、套餐上限，均在上游扣费前执行 |
 | 前沿模型经常处理很简单的任务 | 基于基准和真实流量的路由、shadow 试验、可审计回执 |
 | Agents 需要多个模型家族 | BYO OpenAI、Anthropic、Google、DeepSeek、Qwen、Doubao 等 provider keys，并按任务路由 |
+| 工具输出让每一轮上下文膨胀 | 对 JSON rows、日志、diff、stack traces 和 shell 输出做确定性上下文压缩 |
 
 每个请求都会得到一份回执：
 
@@ -49,7 +50,7 @@ X-Tokensmart-Landed-Model: deepseek-chat
 X-Tokensmart-Routing-Reason: baseline:chat:simple
 X-Tokensmart-Cost-Saved-Vs-Asked-Cents: 0.940000
 X-Tokensmart-Tool-Compress-Chars-Saved: 4200       # 仅在启用
-X-Tokensmart-Tool-Compress-Saved-Cents: 0.060000   # 工具结果压缩时出现
+X-Tokensmart-Tool-Compress-Saved-Cents: 0.060000   # 上下文压缩时出现
 ```
 
 对于付费 API provider，TokSuan 可以按 token 价格展示美元节省。对于自托管
@@ -62,14 +63,15 @@ OpenAI judge，Anthropic 请求用 Haiku，DeepSeek 请求用小 DeepSeek 模型
 如果没有匹配的 BYO key，TokSuan 会回退到本地启发式判断，而不是把 prompt
 发给另一个 provider。
 
-## 工具结果压缩器（可选）
+## 上下文压缩（可选）
 
-长时间运行的 coding agents 会反复把 `git status`、`cat`、`cargo test`
-等命令输出塞回 LLM context。上游 provider 会把这些字节计为 input tokens。
+长时间运行的 coding agents 会反复把大型工具输出、JSON rows、日志、
+stack traces、diff 和 shell 输出塞回模型上下文。上游 provider 会把这些字节
+计为 input tokens。
 
-TokSuan 内置一个可选的工具结果压缩器：扫描请求里的 `tool` / `function`
-消息，识别常见内容形态，并在转发上游前做确定性压缩。这样 agent 代码不用改，
-但每一轮 replay Bash 输出时都能少付一部分 input token。
+TokSuan 内置一个可选的确定性上下文压缩 pipeline：扫描请求里的
+`tool` / `function` 消息，识别常见内容形态，并在转发上游前压缩。这样
+agent 代码不用改，但每一轮 replay 工具输出时都能少付一部分 input token。
 
 当前识别的形态：
 
@@ -78,11 +80,14 @@ TokSuan 内置一个可选的工具结果压缩器：扫描请求里的 `tool` /
 - **shell listings** — `ls -l` / `find` / `tree`，保留头尾，中间省略
 - **stack traces** — 保留 error message + 开头和结尾的关键 frames
 - **NDJSON / structured logs** — 按 `level` 分桶并折叠重复行
+- **JSON arrays / object rows** — SmartCrusher 保留头部、尾部与 error-like
+  rows，并用紧凑哨兵替代被省略的连续区间
 - **ANSI 彩色输出** — 去掉 escape sequences
 - **重复日志行** — 连续相同行折叠成 `<line> (xN)`
 
-典型工具消息可节省 60-95%。运行下面命令可以看 7 个代表性输入的 before /
-after：
+符合条件的工具消息通常可节省 60-95%。一次真实 DeepSeek gateway 测试中，
+JSON 工具结果从 10,574 字符压到 1,198 字符，同时保留埋在中间的 error 行，
+输入字节减少约 **88%**。运行下面命令可以看代表性输入的 before / after：
 
 ```bash
 cd apps/gateway
@@ -94,23 +99,40 @@ bun run preview:tool-compress
 - **只处理 `tool` / `function` role 的消息。** system / user / assistant 内容
   永不修改。
 - **只做启发式形态识别。** 到达 gateway 时原始命令名（如 `git status`）
-  已经丢失，所以只能根据内容结构判断。未知形态保持原样。
+  往往已经丢失，所以只能根据内容结构判断。未知形态保持原样。
 - **确定性且幂等。** 同一内容压缩两次得到相同字节，循环检测 fingerprint
   保持稳定。
+- **先 audit，再 optimize。** `TOKENSMART_CONTEXT_COMPRESS_MODE=audit` 只测
+  潜在节省，不改 prompt；确认回执可信后再切到 `optimize`。
+- **可逆。** 开启 `TOKENSMART_CONTEXT_COMPRESS_STORE=1` 后，原始工具输出会
+  存入 `compressed_blobs`，请求详情页可以查看原文。
 - **默认关闭。** 静默改写 prompt 会影响“我们记账但不乱动 payload”的信任
-  契约。需要显式设置 `TOKENSMART_TOOL_COMPRESS_ENABLED=1`。单次请求可用
-  `x-ts-tool-compress: off` 关闭。
+  契约，需要显式开启。
+
+配置：
+
+```bash
+TOKENSMART_CONTEXT_COMPRESS_MODE=off       # off | audit | optimize
+TOKENSMART_CONTEXT_COMPRESS_STORE=0        # 设为 1 后保留原文
+TOKENSMART_CONTEXT_COMPRESS_CRUSH_JSON=1   # JSON SmartCrusher
+```
+
+单次请求可用 `x-ts-context-compress: off|audit|optimize` 覆盖。
+旧的 `TOKENSMART_TOOL_COMPRESS_ENABLED=1` 仍兼容，并映射为 `optimize`。
 
 启用后可见性：
 
 - 响应头：`X-Tokensmart-Tool-Compress-Chars-Saved` 和
   `X-Tokensmart-Tool-Compress-Saved-Cents`
 - Dashboard 的 “Saved · last 30 days” hero card 会出现
-  **Tool-result compression** 维度
-- 请求行 tags 会记录 `tool_compress_shape`、`tool_compress_chars_saved` 等
-  审计信息
+  **Context compression** 维度
+- 请求行 tags 会记录 `context_compress_mode`、`context_compress_shape`、
+  `context_compress_chars_saved` 等审计信息，同时保留旧的 `tool_compress_*`
+  realized savings tags
+- 开启可逆存储时，请求详情页可查看压缩前原文与压缩后内容
 
-实现和 env knobs 见 `apps/gateway/src/tool-result-compressor.ts`。
+实现和 env knobs 见 `apps/gateway/src/compression/`
+（`tool-result-compressor.ts` 仍作为兼容导出）。
 
 ## 为真实 agents 而建
 
@@ -146,8 +168,9 @@ TokSuan 不是 action firewall。模型网关能控制模型花费，因为每�
 - Project routing rules、shadow mode、A/B quality proof
 - 按 provider 的 BYO complexity judging 与 project-specific routing optimization
 - Retry、failover、cache-control injection、tags、alerts、semantic cache
-- **工具结果压缩器（可选）** — 在转发上游前压缩 `tool` / `function` 消息，
-  覆盖 git status、git diff、stack traces、NDJSON logs、ANSI 输出和重复日志行
+- **上下文压缩（可选）** — 在转发上游前压缩 `tool` / `function` 消息，
+  覆盖 JSON arrays、git status、git diff、stack traces、NDJSON logs、
+  ANSI 输出和重复日志行；支持 audit 模式和可选的可逆原文存储
 
 ### Dashboard
 
@@ -155,7 +178,7 @@ TokSuan 不是 action firewall。模型网关能控制模型花费，因为每�
 - Projects、API keys、budgets、routing rules、alerts、audit log
 - Savings receipt 和 7-day value report
 - 三维 savings hero card：**routing savings**、**prompt-cache savings**、
-  **tool-result compression savings**
+  **context compression savings**
 - Provider key 上传和加密存储
 - 当调用方发送 attribution headers 时，提供 agents/session 视图
 - Trust page 和生产健康姿态
@@ -227,7 +250,7 @@ cd apps/dashboard && bun install && WATCHPACK_POLLING=true bun run dev
 ### 验证安装
 
 ```bash
-# 离线查看工具结果压缩器的 before/after
+# 离线查看上下文压缩的 before/after
 cd apps/gateway && bun run preview:tool-compress
 
 # 单请求 5 关诊断：gateway、env、response header、DB tag、dashboard pointer
@@ -267,7 +290,7 @@ TokSuan Gateway
    - auth
    - budget and loop checks
    - routing / shadow / failover
-   - optional tool-result compression
+   - optional context compression
    - provider resolution
    - cost calculation
    |

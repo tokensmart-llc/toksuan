@@ -1,8 +1,9 @@
 # TokSuan
 
-> **Spend control and routing for AI agents.**
-> Make every agent turn visible, cap runaway spend, and route to cheaper models
-> only when the receipt proves the trade worked.
+> **Spend control, routing, and context compression for AI agents.**
+> Make every agent turn visible, cap runaway spend, route to cheaper models
+> only when the receipt proves the trade worked, and shrink bulky tool context
+> before it reaches the LLM.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
@@ -39,6 +40,7 @@ Long-running AI agents create three operational problems:
 | You cannot see what every agent turn cost | Request ledger with model, tokens, latency, tags, cost, and savings |
 | A loop can burn money before anyone notices | Daily/monthly budgets, loop detection, and plan caps before upstream billing |
 | Frontier models handle trivial work | Benchmark-derived routing, shadow trials, and proof headers before promotion |
+| Tool output bloats every turn | Deterministic context compression for JSON rows, logs, diffs, stack traces, and shell output |
 | Agents need multiple model families | BYO provider keys for OpenAI, Anthropic, Google, DeepSeek, Qwen, and Doubao, with routing that sends each task to the best-fit provider |
 
 The result is a per-request receipt:
@@ -63,15 +65,14 @@ use a cheap OpenAI judge, Anthropic requests use Haiku, DeepSeek requests use a
 small DeepSeek model). If no matching BYO key exists, TokSuan falls back to a
 local heuristic rather than sending prompts to another provider.
 
-## Tool-result compressor (opt-in)
+## Context compression (opt-in)
 
-Long-running coding agents replay the same `git status`, `cat`, `cargo
-test` stdout back into their LLM context on every turn. The bytes are
-billed as input tokens by every upstream provider. TokSuan ships an
-opt-in compressor that scans `tool` / `function` messages for known
-content shapes and shrinks them deterministically before forwarding
-upstream — so the same agent loop pays for fewer tokens without the
-agent code changing.
+Long-running coding agents replay large tool outputs, JSON rows, logs, stack
+traces, diffs, and shell output back into the model context on every turn. The
+bytes are billed as input tokens by every upstream provider. TokSuan ships an
+opt-in deterministic context-compression pipeline that shrinks `tool` /
+`function` messages before forwarding upstream — so the same agent loop pays
+for fewer tokens without the agent code changing.
 
 Recognised shapes (heuristic-only, no command-name signal needed):
 
@@ -81,29 +82,47 @@ Recognised shapes (heuristic-only, no command-name signal needed):
   middle elided
 - **stack traces** — keeps error message + first/last frames
 - **NDJSON / structured logs** — buckets by `level`, collapses repeats
+- **JSON arrays / object rows** — SmartCrusher keeps head, tail, and error-like
+  rows while replacing dropped runs with compact sentinels
 - **ANSI-coloured output** — strips escape sequences
 - **Repeating log lines** — consecutive identical lines → `<line> (×N)`
 
-Typical per-message savings: 60-95% on real coding-agent output. See
-`apps/gateway/scripts/preview-tool-compress.ts` for live before/after
-demos on 7 representative inputs.
+Typical per-message savings: 60-95% on eligible coding-agent output. In a live
+DeepSeek gateway test, a JSON tool result compressed from 10,574 chars to 1,198
+chars while preserving a buried error row — **88% fewer input bytes**.
+See `apps/gateway/scripts/preview-tool-compress.ts` for before/after demos.
 
-Design constraints — the compressor is intentionally narrower than a
-local-shell-level filter because we operate at the API layer:
+Design constraints — the compressor is intentionally conservative because it
+operates at the API layer:
 
 - **Only `tool` / `function` role messages are touched.** System,
   user, and assistant content is never modified.
 - **Heuristic shape detection only.** The original command name
-  (`git status`, `cargo test`) is lost by the time bytes reach the
-  gateway, so we identify content shape from structure alone. Five
-  shapes covered; unknown shapes pass through unchanged.
+  (`git status`, `cargo test`) is often lost by the time bytes reach the
+  gateway, so we identify content shape from structure alone. Unknown shapes
+  pass through unchanged.
 - **Idempotent + deterministic.** Running the compressor twice yields
   identical bytes — loop-detection fingerprints stay stable, replays
   are reproducible.
-- **Off by default.** Silently rewriting prompts conflicts with the
-  "we record what happened, we don't fudge prompts" trust contract.
-  Operators flip `TOKENSMART_TOOL_COMPRESS_ENABLED=1` knowingly.
-  Per-call escape hatch via header `x-ts-tool-compress: off`.
+- **Audit before optimize.** Use `TOKENSMART_CONTEXT_COMPRESS_MODE=audit` to
+  measure potential savings without rewriting prompts, then switch to
+  `optimize` when the receipt looks safe.
+- **Reversible when enabled.** With `TOKENSMART_CONTEXT_COMPRESS_STORE=1`,
+  TokSuan stores the original tool output in `compressed_blobs` and shows it
+  on the request detail page.
+- **Off by default.** Silently rewriting prompts conflicts with the trust
+  contract. Operators opt in knowingly.
+
+Configuration:
+
+```bash
+TOKENSMART_CONTEXT_COMPRESS_MODE=off       # off | audit | optimize
+TOKENSMART_CONTEXT_COMPRESS_STORE=0        # set 1 to retain originals
+TOKENSMART_CONTEXT_COMPRESS_CRUSH_JSON=1   # JSON SmartCrusher
+```
+
+Per-call override: `x-ts-context-compress: off|audit|optimize`.
+Legacy `TOKENSMART_TOOL_COMPRESS_ENABLED=1` still maps to `optimize`.
 
 Visibility when the compressor fires:
 
@@ -111,10 +130,14 @@ Visibility when the compressor fires:
   `X-Tokensmart-Tool-Compress-Saved-Cents` for same-trip proof
 - Dedicated cell in the dashboard's "Saved · last 30 days" hero card
   alongside routing and prompt-cache savings
-- Per-request tags (`tool_compress_shape`, `tool_compress_chars_saved`,
-  ...) on the request row for audit + per-shape analytics
+- Per-request tags (`context_compress_mode`, `context_compress_shape`,
+  `context_compress_chars_saved`, plus legacy `tool_compress_*` realized
+  savings tags) on the request row for audit + per-shape analytics
+- Optional request-detail view of original vs compressed content when
+  reversible storage is enabled
 
-Design and env knobs in `apps/gateway/src/tool-result-compressor.ts`.
+Design and env knobs in `apps/gateway/src/compression/`
+(`tool-result-compressor.ts` remains a compatibility export).
 
 ## Built For Real Agents
 
@@ -155,11 +178,11 @@ evidence it is safe.
 - Project routing rules, shadow mode, and A/B quality proof
 - Per-provider BYO complexity judging and per-project routing optimization
 - Retry, failover, cache-control injection, tags, alerts, and semantic cache
-- **Tool-result compressor (opt-in)** — shrinks `tool` / `function` messages
-  (git status, git diff, stack traces, NDJSON logs, ANSI-coloured output,
-  spammy repeating lines) before forwarding upstream. Saves input tokens
-  on every coding-agent turn that replays Bash output. See
-  [Tool-result compressor](#tool-result-compressor-opt-in) above for the
+- **Context compression (opt-in)** — shrinks `tool` / `function` messages
+  (JSON arrays, git status, git diff, stack traces, NDJSON logs,
+  ANSI-coloured output, spammy repeating lines) before forwarding upstream.
+  Supports audit mode and optional reversible original storage. See
+  [Context compression](#context-compression-opt-in) above for the
   design.
 
 ### Dashboard
@@ -168,7 +191,7 @@ evidence it is safe.
 - Projects, API keys, budgets, routing rules, alerts, audit log
 - Savings receipt and 7-day value report
 - Three-dimensional savings hero card: **routing savings**, **prompt-cache
-  savings**, **tool-result compression savings** (only renders cells whose
+  savings**, **context compression savings** (only renders cells whose
   dimension actually fired in the window)
 - Provider-key upload with encrypted storage
 - Agents/session view when callers send attribution headers
@@ -256,9 +279,9 @@ Three scripts validate the install end-to-end, from offline → live gateway
 → dashboard data:
 
 ```bash
-# 1. Pure-module preview (no gateway, no DB) — see what the tool-result
-#    compressor does to 7 representative inputs (git status, git diff,
-#    stack traces, NDJSON logs, ...).
+# 1. Pure-module preview (no gateway, no DB) — see what context compression
+#    does to representative inputs (JSON arrays, git diff, stack traces,
+#    NDJSON logs, ...).
 cd apps/gateway && bun run preview:tool-compress
 
 # 2. Single-request diagnostic — 5-station check (gateway up, env flag,
