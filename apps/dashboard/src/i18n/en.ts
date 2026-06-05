@@ -97,10 +97,10 @@ export const en: Dictionary = {
     navHermes: "Hermes",
     ctaSignedIn: "Go to dashboard",
     ctaAnonymous: "Sign in / Start free",
-    heroEyebrow: "Spend control, routing, and context compression for AI agents",
-    heroTitle: "Your AI agents should not surprise you with a bill.",
+    heroEyebrow: "The spend-control plane for AI agents",
+    heroTitle: "Your AI agents are spending in the dark.",
     heroSubtitle:
-      "TokSuan is operated by TokenSmart LLC and sits between your agents and model providers, making every request visible, capped, safely routed, and lighter before it reaches the LLM. Simple turns stop burning frontier-model money; bulky tool output stops replaying at full price.",
+      "One OpenAI-compatible proxy gives every turn a receipt, caps runaway loops before upstream billing, routes simple work to cheaper models, and compresses bulky tool context before it reaches the LLM.",
     heroPrimarySignedIn: "Go to dashboard",
     heroPrimaryAnonymous: "Start free with email",
     heroSecondaryEstimate: "Estimate savings",
@@ -109,7 +109,7 @@ export const en: Dictionary = {
     heroSecondaryHermes: "Hermes guide",
     heroSecondarySelfHost: "Self-host docs",
     heroFinePrint:
-      "No token markup. Bring your own provider keys. Same-provider BYO judging by default. Self-hostable when you need it.",
+      "See it. Cap it. Shrink it. Keep it running. No token markup. Bring your own provider keys.",
     receiptHeader: "sample receipt",
     receiptSession: "OpenClaw session",
     receiptAskedModel: "Asked model",
@@ -181,23 +181,23 @@ export const en: Dictionary = {
     why3Body:
       "Cheaper models need evidence before production traffic moves.",
     loopEyebrow: "Control loop",
-    loopTitle: "See it, cap it, shrink it.",
+    loopTitle: "See it. Cap it. Shrink it. Keep it running.",
     loopBody:
       "Four product surfaces work together: a ledger for visibility, budget guards for control, routing proof for safe savings, and reversible context compression for bulky tool output.",
-    bento1Pill: "Observe",
-    bento1Title: "Every request becomes a receipt.",
+    bento1Pill: "See it",
+    bento1Title: "See every turn.",
     bento1Body:
-      "Project, provider, model, tags, latency, input tokens, output tokens, routing reason, and cost land in one ledger your team can inspect.",
-    bento2Pill: "Control",
-    bento2Title: "Budgets block before upstream.",
+      "Every request becomes a receipt: asked model, landed model, tokens, latency, routing reason, compression savings, and exact cost.",
+    bento2Pill: "Cap it",
+    bento2Title: "Cap runaway spend.",
     bento2Body:
-      "Daily and monthly caps stop runaway spend before provider billing.",
-    bento3Pill: "Agents",
-    bento3Title: "Loop detection catches repeats.",
+      "Daily budgets, plan caps, and loop detection stop bad agent behavior before the provider bills you.",
+    bento3Pill: "Shrink it",
+    bento3Title: "Shrink the replay tax.",
     bento3Body:
-      "Repeated fingerprints can be stopped before an agent burns the same turn again.",
-    bento4Pill: "Optimize",
-    bento4Title: "Route cheaper and compress context only when the evidence is good enough.",
+      "Agents replay tool output. TokSuan compresses JSON rows, logs, diffs, stack traces, and shell output before they become input tokens.",
+    bento4Pill: "Keep it running",
+    bento4Title: "Route and compress with proof.",
     bento4Body:
       "Public benchmarks provide the day-one routing frontier. Audit/optimize compression modes show byte savings before prompts are rewritten, and reversible storage keeps original tool output available.",
     trustBand1Title: "No token markup",
@@ -285,9 +285,9 @@ export const en: Dictionary = {
     metaTitle: "Savings estimator",
     metaDescription:
       "Estimate how much TokSuan will save on your monthly LLM bill. Two inputs, no signup — conservative planning ranges, then prove the actual savings on your own traffic.",
-    title: "How much would TokSuan save you?",
+    title: "Estimate first. Prove it on your own traffic.",
     subtitle:
-      "Two inputs. No signup. A conservative planning range before you prove the exact number on your own traffic.",
+      "This calculator gives a conservative planning range. TokSuan then turns that estimate into receipts from real requests: asked model, landed model, actual cost, routing savings, prompt-cache savings, and context-compression savings.",
   },
 
   trust: {

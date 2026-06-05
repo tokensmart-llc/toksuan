@@ -1,8 +1,7 @@
 # TokSuan
 
-> **面向 AI agent 的花费控制、模型路由与上下文压缩网关。**
-> 让每一轮 agent 调用都可见、可限额，并且只在回执证明安全时
-> 自动路由到更便宜的模型；同时在上下文进入 LLM 前压缩臃肿的工具输出。
+> **AI agent 的花费控制层。**
+> 看清开销，设好上限，压缩上下文，让 agent 跑得更久。
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
@@ -12,9 +11,10 @@
 
 ![TokSuan 教程截图](docs/assets/toksuan-tutorial.png)
 
-TokSuan 由 TokenSmart LLC 运营，位于你的 agent 和上游模型提供商之间。
-它保持工具已经兼容的 OpenAI API 形状，同时增加花费回执、预算、循环
-保护和基于证据的模型路由。
+你的 AI agent 正在黑箱里花钱。TokSuan 由 TokenSmart LLC 运营，位于你的
+agent 和上游模型提供商之间。它保持工具已经兼容的 OpenAI API 形状，同时
+增加请求回执、预算、循环保护、基于证据的模型路由，以及进入 LLM 前的
+上下文压缩。
 
 它不是一个“便宜模型代理”：简单任务可以路由到快速低价模型；困难 /
 前沿任务会继续留在高质量模型上，除非你的真实流量证明切换是安全的。
@@ -65,13 +65,12 @@ OpenAI judge，Anthropic 请求用 Haiku，DeepSeek 请求用小 DeepSeek 模型
 
 ## 上下文压缩（可选）
 
-长时间运行的 coding agents 会反复把大型工具输出、JSON rows、日志、
-stack traces、diff 和 shell 输出塞回模型上下文。上游 provider 会把这些字节
-计为 input tokens。
+Agent 不只是推理，它还会反复 replay。
 
-TokSuan 内置一个可选的确定性上下文压缩 pipeline：扫描请求里的
-`tool` / `function` 消息，识别常见内容形态，并在转发上游前压缩。这样
-agent 代码不用改，但每一轮 replay 工具输出时都能少付一部分 input token。
+一个 coding agent 可能会在多轮对话里反复把同一段 git diff、测试日志、
+stack trace 或 JSON 结果发回模型。TokSuan 用可选的确定性上下文压缩降低这
+部分 replay tax：先 audit，不改 prompt；确认安全后再 optimize；开启可逆
+存储后，原始工具输出仍可找回。
 
 当前识别的形态：
 
@@ -133,6 +132,9 @@ TOKENSMART_CONTEXT_COMPRESS_CRUSH_JSON=1   # JSON SmartCrusher
 
 实现和 env knobs 见 `apps/gateway/src/compression/`
 （`tool-result-compressor.ts` 仍作为兼容导出）。
+
+不是黑箱优化，每一次都有回执：路由会说明为什么换模型；压缩会说明删掉了
+多少字节；可逆存储会保留原始工具输出，便于审计。
 
 ## 为真实 agents 而建
 

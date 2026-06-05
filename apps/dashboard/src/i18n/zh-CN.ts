@@ -92,7 +92,7 @@ export const zhCN: Dictionary = {
 
   landing: {
     metaDescription:
-      "只改一行 base_url，让 AI agent 的每次请求都可见、可限额，并在回执验证安全后自动走更便宜的模型，同时压缩臃肿工具上下文。",
+      "只改一行 base_url，让 AI agent 的每次请求都有回执、可限额、可路由、可压缩。",
     navStateOfSpend: "成本现状",
     navEstimate: "节省评估",
     navTrust: "安全",
@@ -100,10 +100,10 @@ export const zhCN: Dictionary = {
     navHermes: "Hermes",
     ctaSignedIn: "进入 Dashboard",
     ctaAnonymous: "登录 / 免费开始",
-    heroEyebrow: "面向 AI Agent 的成本控制、路由与上下文压缩",
-    heroTitle: "AI agent 不该让你看到账单时才发现问题。",
+    heroEyebrow: "AI agent 的花费控制层",
+    heroTitle: "你的 AI agent 正在黑箱里花钱。",
     heroSubtitle:
-      "TokSuan 由 TokenSmart LLC 运营，接在你的 agent 与各家模型服务商之间，让每一次请求可见、可限额、可安全路由，并在进入 LLM 前压缩臃肿上下文。简单的 turn 不再消耗旗舰模型预算，重复工具输出也不再按原价反复计费。",
+      "只改一个 OpenAI-compatible base_url，每一轮调用都有回执；失控循环在 upstream 前被拦下；简单任务自动下沉到更便宜的模型；臃肿工具上下文在进入 LLM 前被压缩。",
     heroPrimarySignedIn: "进入 Dashboard",
     heroPrimaryAnonymous: "用邮箱免费开始",
     heroSecondaryEstimate: "评估节省空间",
@@ -112,7 +112,7 @@ export const zhCN: Dictionary = {
     heroSecondaryHermes: "Hermes 接入指南",
     heroSecondarySelfHost: "自部署文档",
     heroFinePrint:
-      "不抽 token 差价，自带服务商 API key，默认使用同一服务商家族的模型做复杂度判定，需要时可自部署。",
+      "看清开销，设好上限，压缩上下文，让 agent 跑得更久。不抽 token 差价，自带服务商 API key。",
     receiptHeader: "回执示例",
     receiptSession: "OpenClaw 会话",
     receiptAskedModel: "请求模型",
@@ -182,22 +182,22 @@ export const zhCN: Dictionary = {
     why3Title: "切到便宜模型需要证据",
     why3Body: "在生产流量切换之前，必须先证明便宜模型在你的场景下足够安全。",
     loopEyebrow: "控制闭环",
-    loopTitle: "看清、限制、收敛。",
+    loopTitle: "看清开销，设好上限，压缩上下文，让 agent 跑得更久。",
     loopBody:
       "四块产品共同工作：用账本实现可见，用预算守门提供控制，用路由证据安全省钱，用可逆上下文压缩降低臃肿工具输出的 input token。",
-    bento1Pill: "观测",
-    bento1Title: "每次请求都成为一份回执。",
+    bento1Pill: "看清",
+    bento1Title: "看清每一轮。",
     bento1Body:
-      "项目、服务商、模型、tag、延迟、输入 / 输出 token、路由原因与成本统一进入一个账本，团队可随时复核。",
-    bento2Pill: "控制",
-    bento2Title: "预算在 upstream 之前先生效。",
-    bento2Body: "日预算与月预算可以在服务商计费前阻止失控开销。",
-    bento3Pill: "Agent",
-    bento3Title: "循环检测捕获重复行为。",
+      "每次请求都有回执：请求模型、实际模型、token、延迟、路由原因、上下文压缩节省和实际成本。",
+    bento2Pill: "限额",
+    bento2Title: "在扣费前设好上限。",
+    bento2Body: "日预算、套餐上限和循环检测会在请求到达模型服务商前生效，拦住失控 agent。",
+    bento3Pill: "压缩",
+    bento3Title: "压缩 replay tax。",
     bento3Body:
-      "重复出现的请求指纹可以在 agent 再次烧钱之前被拦下来。",
-    bento4Pill: "优化",
-    bento4Title: "证据足够时，才下沉模型并压缩上下文。",
+      "Agent 会反复 replay 工具输出。TokSuan 会在 JSON rows、日志、diff、stack trace 和 shell 输出变成 input tokens 前先压缩。",
+    bento4Pill: "持续运行",
+    bento4Title: "有证据，才路由和压缩。",
     bento4Body:
       "公开 benchmark 提供第一天的路由前沿；audit / optimize 压缩模式先展示字节节省，再决定是否改写 prompt；可逆存储保留原始工具输出。",
     trustBand1Title: "不抽 token 差价",
@@ -282,9 +282,9 @@ export const zhCN: Dictionary = {
     metaTitle: "节省评估",
     metaDescription:
       "评估 TokSuan 能为你的月度模型账单节省多少。两个输入，无需注册，先给出保守区间，再用你自己的真实流量验证。",
-    title: "TokSuan 能为你节省多少？",
+    title: "先估算，再用真实流量证明。",
     subtitle:
-      "两个输入，无需注册。先给出一个保守的规划区间，再在你自己的真实流量上验证准确数字。",
+      "这个计算器只给保守规划区间。接入后，TokSuan 会用真实请求回执验证：请求模型、实际模型、实际成本、路由节省、prompt-cache 节省和上下文压缩节省。",
   },
 
   trust: {

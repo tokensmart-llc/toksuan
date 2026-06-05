@@ -1,9 +1,7 @@
 # TokSuan
 
-> **Spend control, routing, and context compression for AI agents.**
-> Make every agent turn visible, cap runaway spend, route to cheaper models
-> only when the receipt proves the trade worked, and shrink bulky tool context
-> before it reaches the LLM.
+> **The spend-control plane for AI agents.**
+> See it. Cap it. Shrink it. Keep it running.
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
@@ -13,10 +11,11 @@ English | [中文](README.zh-CN.md)
 
 ![TokSuan tutorial screenshot](docs/assets/toksuan-tutorial.png)
 
-TokSuan is operated by TokenSmart LLC and sits between your agent and upstream
-model providers. It keeps the OpenAI-compatible API shape your tools already
-use, then adds spend receipts, budgets, loop protection, and evidence-based
-routing.
+Your AI agents are spending in the dark. TokSuan is operated by TokenSmart LLC
+and sits between your agent and upstream model providers. It keeps the
+OpenAI-compatible API shape your tools already use, then adds receipts, budgets,
+loop protection, evidence-based routing, and context compression before the
+request reaches the LLM.
 It is not a cheap-model proxy: simple turns can route to fast inexpensive
 models, hard/frontier turns keep high-quality models unless there is strong
 evidence to switch, and each project's real traffic improves future routing.
@@ -67,12 +66,12 @@ local heuristic rather than sending prompts to another provider.
 
 ## Context compression (opt-in)
 
-Long-running coding agents replay large tool outputs, JSON rows, logs, stack
-traces, diffs, and shell output back into the model context on every turn. The
-bytes are billed as input tokens by every upstream provider. TokSuan ships an
-opt-in deterministic context-compression pipeline that shrinks `tool` /
-`function` messages before forwarding upstream — so the same agent loop pays
-for fewer tokens without the agent code changing.
+Agents do not just think. They replay.
+
+A coding agent may send the same git diff, test log, stack trace, or JSON result
+back to the model for many turns. TokSuan cuts that replay tax with an opt-in
+deterministic context-compression pipeline: audit first, optimize when ready,
+and keep originals recoverable when reversible storage is enabled.
 
 Recognised shapes (heuristic-only, no command-name signal needed):
 
@@ -138,6 +137,10 @@ Visibility when the compressor fires:
 
 Design and env knobs in `apps/gateway/src/compression/`
 (`tool-result-compressor.ts` remains a compatibility export).
+
+No invisible magic: every optimization leaves a receipt. Routing says why the
+model changed. Compression says how many bytes were removed. Reversible storage
+keeps the original tool output available for audit.
 
 ## Built For Real Agents
 
