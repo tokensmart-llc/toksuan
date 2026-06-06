@@ -58,15 +58,20 @@ export async function applyRouting(
     classifierModelOverride?: string | null;
   } = {}
 ): Promise<RoutingDecision> {
+  const rules = await getRoutingRules(projectId);
+  if (rules.length === 0) {
+    // No user rules means there is nothing for this layer to evaluate. Avoid
+    // scoring here because the baseline policy will score/classify the same
+    // request if it is enabled; doing both doubles classifier work on the
+    // common "baseline only" path.
+    return { routed: false, score: 0, shadow_model: null, mode: null };
+  }
+
   const score = await scoreComplexity(body, {
     userId: opts.userId,
     requestedModel: String(body.model ?? ""),
     classifierModelOverride: opts.classifierModelOverride,
   });
-  const rules = await getRoutingRules(projectId);
-  if (rules.length === 0) {
-    return { routed: false, score, shadow_model: null, mode: null };
-  }
 
   const originalModel = String(body.model ?? "");
 

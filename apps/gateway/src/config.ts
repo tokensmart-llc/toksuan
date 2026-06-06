@@ -98,6 +98,44 @@ const EnvSchema = z.object({
   TOKENSMART_BASELINE_RESCUE_UNKNOWN_MODELS: z.string().default("0"),
 
   /**
+   * Cache-aware switch guard for automated baseline routing. Multi-turn
+   * agents often carry a long, provider-cached prompt prefix. A cheaper
+   * candidate model can still be more expensive for THIS turn if switching
+   * models makes that prefix cold again. When enabled, baseline routing still
+   * recommends per turn, but cross-model switches must clear a net-savings
+   * check before we rewrite the request.
+   */
+  TOKENSMART_CACHE_AWARE_ROUTING: z.string().default("1"),
+  /**
+   * Eviction-only TTL for the in-process session→last-route map. This bounds
+   * memory for abandoned sessions; it is NOT a "cache is still warm" timer.
+   * Warmth is judged from the previous turn's MEASURED cache-hit ratio
+   * (`prompt_tokens_details.cached_tokens`), not from elapsed wall-clock time.
+   */
+  TOKENSMART_CACHE_AWARE_SESSION_TTL_MS: z.coerce.number().default(30 * 60_000),
+  /** Session cache cardinality cap for the in-process route-state map. */
+  TOKENSMART_CACHE_AWARE_MAX_SESSIONS: z.coerce.number().default(10_000),
+  /**
+   * Below this estimated input size, switching models is unlikely to lose a
+   * meaningful prompt-cache prefix, so we leave the existing route alone.
+   */
+  TOKENSMART_CACHE_AWARE_MIN_INPUT_TOKENS: z.coerce.number().default(2048),
+  /**
+   * Hysteresis: require this fractional improvement over "stay on warm model"
+   * before accepting a downgrade. Prevents flip-flopping on tiny estimates.
+   */
+  TOKENSMART_CACHE_AWARE_MIN_SAVINGS_RATIO: z.coerce.number().default(0.05),
+  /**
+   * When the candidate model is at least this many times more expensive than
+   * the previous landed model (priced fresh, same token counts), treat the
+   * switch as an intentional quality UPGRADE and let it through regardless of
+   * cache economics. The guard's job is to stop marginal cost-saving
+   * DOWNgrades that throw away a hot prefix — not to block escalation to a
+   * stronger model on a harder turn. Default 1.15 (15% pricier ⇒ upgrade).
+   */
+  TOKENSMART_CACHE_AWARE_UPGRADE_COST_RATIO: z.coerce.number().default(1.15),
+
+  /**
    * v0.6.5 — file-watch hot-reload for `baseline-policy.json`. When
    * enabled (default), the gateway watches the artifact file's
    * directory; a successful rewrite (e.g. by `bench:extract` after

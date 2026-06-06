@@ -83,6 +83,9 @@ TOKENSMART_GCP_KMS_KEY_NAME=projects/.../cryptoKeys/...     # GCP KMS envelope
 TOKENSMART_AUTO_CACHE_CONTROL=1
 TOKENSMART_CLASSIFIER_MODE=byo_same_provider  # default: user pays via their BYO same-provider key
 TOKENSMART_CLASSIFIER_MODEL=gpt-4o-mini       # only used with TOKENSMART_CLASSIFIER_MODE=explicit
+TOKENSMART_CACHE_AWARE_ROUTING=1              # baseline routing accounts for measured prompt-cache reuse
+TOKENSMART_CACHE_ENABLED=0                    # optional exact/semantic response cache
+TOKENSMART_CACHE_SIMILARITY_THRESHOLD=0       # >0 needs TOKENSMART_QUALITY_EMBED_MODEL
 TOKENSMART_KMS_CACHE_TTL_MS=600000
 TOKENSMART_KMS_CACHE_MAX_SIZE=1000
 ```
@@ -102,6 +105,12 @@ TokSuan is a spend-control router, not a cheap-model proxy:
   an OpenAI judge; a customer who only provides Anthropic gets a Haiku judge.
   TokSuan does not spend platform provider keys or send prompts across
   providers unless explicitly configured.
+- Baseline routing is cache-aware for multi-turn agents. When callers send
+  `x-ts-session` (and ideally monotonic `x-ts-turn`), the gateway remembers the
+  last landed model and the provider-reported cached input tokens. It still
+  scores every turn independently, but it blocks a downgrade when switching
+  models would throw away a measured hot prompt prefix and cost more on this
+  turn. Explicit project routing rules are not overridden by this guard.
 
 As a project accumulates real `requests` and `ab_results`, retraining can
 promote a per-project policy that reflects that agent's workload. The product

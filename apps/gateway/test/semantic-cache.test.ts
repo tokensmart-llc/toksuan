@@ -24,6 +24,12 @@ function envSnapshot(): Record<string, string | undefined> {
     TOKENSMART_CACHE_TTL_SECONDS: process.env.TOKENSMART_CACHE_TTL_SECONDS,
     TOKENSMART_CACHE_SIMILARITY_THRESHOLD:
       process.env.TOKENSMART_CACHE_SIMILARITY_THRESHOLD,
+    TOKENSMART_QUALITY_EMBED_MODEL: process.env.TOKENSMART_QUALITY_EMBED_MODEL,
+    TOKENSMART_QUALITY_EMBED_PROVIDER:
+      process.env.TOKENSMART_QUALITY_EMBED_PROVIDER,
+    TOKENSMART_QUALITY_EMBED_BASE_URL:
+      process.env.TOKENSMART_QUALITY_EMBED_BASE_URL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   };
 }
 function envRestore(snap: Record<string, string | undefined>) {
@@ -57,6 +63,8 @@ const fakeUpstreamResponse = {
     prompt_tokens_details: { cached_tokens: 0 },
   },
 };
+
+const originalFetch = globalThis.fetch;
 
 describe("semantic-cache: eligibility gate", () => {
   test("rejects streaming requests", () => {
@@ -150,6 +158,7 @@ describe("semantic-cache: lookup + store integration", () => {
   afterEach(() => {
     _resetSemanticCache();
     envRestore(snap);
+    globalThis.fetch = originalFetch;
   });
 
   test("first lookup misses, store, second lookup hits", async () => {
@@ -206,5 +215,99 @@ describe("semantic-cache: lookup + store integration", () => {
     const r = await lookupSemanticCache(PROJECT_A, cacheableBody);
     expect(r.hit).toBe(false);
     if (!r.hit) expect(r.reason).toBe("disabled");
+  });
+
+  test("semantic similarity embeds lookup prompt once and compares stored vectors locally", async () => {
+    process.env.TOKENSMART_CACHE_SIMILARITY_THRESHOLD = "0.95";
+    process.env.TOKENSMART_QUALITY_EMBED_MODEL = "text-embedding-test";
+    process.env.TOKENSMART_QUALITY_EMBED_BASE_URL = "https://example.test/v1";
+    process.env.OPENAI_API_KEY = "sk-test";
+    _resetSemanticCache();
+
+    let fetchCalls = 0;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      fetchCalls++;
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+      const inputs = Array.isArray(body.input) ? body.input : [];
+      return new Response(
+        JSON.stringify({
+          data: inputs.map(() => ({ embedding: [1, 0, 0] })),
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+
+    const bodyA = {
+      ...cacheableBody,
+      messages: [{ role: "user", content: "Explain prompt cache routing." }],
+    };
+    const bodyB = {
+      ...cacheableBody,
+      messages: [{ role: "user", content: "Summarize cache-aware switching." }],
+    };
+    const bodyC = {
+      ...cacheableBody,
+      messages: [{ role: "user", content: "Describe routing cache behavior." }],
+    };
+
+    await storeInSemanticCache({
+      projectId: PROJECT_A,
+      cacheKey: _testInternals.exactKey(PROJECT_A, bodyA),
+      body: bodyA,
+      responseBody: fakeUpstreamResponse,
+    });
+
+    await storeInSemanticCache({
+      projectId: PROJECT_A,
+      cacheKey: _testInternals.exactKey(PROJECT_A, bodyB),
+      body: bodyB,
+      responseBody: fakeUpstreamResponse,
+    });
+
+    fetchCalls = 0;
+    const lookup = await lookupSemanticCache(PROJECT_A, bodyC);
+    expect(lookup.hit).toBe(true);
+    if (!lookup.hit) return;
+    expect(lookup.kind).toBe("similarity");
+    expect(fetchCalls).toBe(1);
+  });
+
+  test("similarity lookup is project-scoped and cannot hit another tenant", async () => {
+    process.env.TOKENSMART_CACHE_SIMILARITY_THRESHOLD = "0.95";
+    process.env.TOKENSMART_QUALITY_EMBED_MODEL = "text-embedding-test";
+    process.env.TOKENSMART_QUALITY_EMBED_BASE_URL = "https://example.test/v1";
+    process.env.OPENAI_API_KEY = "sk-test";
+    _resetSemanticCache();
+
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+      const inputs = Array.isArray(body.input) ? body.input : [];
+      return new Response(
+        JSON.stringify({
+          data: inputs.map(() => ({ embedding: [1, 0, 0] })),
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+
+    const bodyA = {
+      ...cacheableBody,
+      messages: [{ role: "user", content: "Explain prompt cache routing." }],
+    };
+    const bodyB = {
+      ...cacheableBody,
+      messages: [{ role: "user", content: "Describe prompt cache routing." }],
+    };
+
+    await storeInSemanticCache({
+      projectId: PROJECT_A,
+      cacheKey: _testInternals.exactKey(PROJECT_A, bodyA),
+      body: bodyA,
+      responseBody: fakeUpstreamResponse,
+    });
+
+    const lookup = await lookupSemanticCache(PROJECT_B, bodyB);
+    expect(lookup.hit).toBe(false);
+    if (!lookup.hit) expect(lookup.cacheKey).not.toBeNull();
   });
 });

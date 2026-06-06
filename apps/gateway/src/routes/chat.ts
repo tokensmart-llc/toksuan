@@ -45,6 +45,10 @@ import {
   lookupSemanticCache,
   storeInSemanticCache,
 } from "../semantic-cache";
+import {
+  evaluateCacheAwareRouting,
+  recordSessionRouteState,
+} from "../session-route-guard";
 import { parseAttributionHeaders } from "../tags";
 import {
   applyTemplateToBody,
@@ -112,6 +116,41 @@ function stampToolCompressMicroCentsSaved(
   const microCents = calcCostMicroCents(provider, model, tokensSaved, 0, 0);
   if (microCents > 0) {
     tags.tool_compress_micro_cents_saved_est = String(microCents);
+  }
+}
+
+function stampCacheAwareRoutingTags(
+  tags: Record<string, string>,
+  decision: ReturnType<typeof evaluateCacheAwareRouting>
+): void {
+  if (
+    decision.action === "disabled" ||
+    decision.action === "not_automatic" ||
+    decision.action === "no_session" ||
+    decision.action === "no_state" ||
+    decision.action === "same_model"
+  ) {
+    return;
+  }
+  tags.cache_aware_routing = decision.action;
+  tags.cache_aware_reason = decision.reason;
+  if (decision.previousModel) {
+    tags.cache_aware_previous_model = decision.previousModel;
+  }
+  if ("candidateModel" in decision) {
+    tags.cache_aware_candidate_model = decision.candidateModel;
+  }
+  if (decision.warmPrefixTokens != null) {
+    tags.cache_aware_warm_prefix_tokens = String(decision.warmPrefixTokens);
+  }
+  if (decision.stayCostMicroCents != null) {
+    tags.cache_aware_stay_micro_cents = String(decision.stayCostMicroCents);
+  }
+  if (decision.switchCostMicroCents != null) {
+    tags.cache_aware_switch_micro_cents = String(decision.switchCostMicroCents);
+  }
+  if (decision.savingsMicroCents != null) {
+    tags.cache_aware_savings_micro_cents = String(decision.savingsMicroCents);
   }
 }
 
@@ -765,6 +804,8 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   // card AND the per-session aggregation view. Always a plain object —
   // never null. Bad headers → empty object, not error.
   const tags = parseAttributionHeaders((name: string) => c.req.header(name));
+  const sessionId = tags.session ?? null;
+  const turnId = tags.turn ?? null;
   const classifierModelOverride = c.req.header("x-ts-classifier-model") ?? null;
   let compressedBlobEntries: Parameters<typeof storeCompressedBlobs>[2] = [];
   // If the request used a prompt template (filled in below), we'll stamp
@@ -1005,10 +1046,6 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   // ---- Semantic routing ------------------------------------------------
   // May rewrite body.model. We remember the original for provenance + savings.
   const originalModel = String(body.model);
-  // Snapshot before any mutation so the shadow A/B path can re-issue the
-  // exact same prompt against an experimental model. Cheap thanks to
-  // structuredClone — we already JSON.stringify the body for upstream anyway.
-  const bodySnapshot: OpenAIChatRequest = structuredClone(body);
   const routing = await applyRouting(apiKey.project_id, body, {
     userId: apiKey.project_user_id,
     classifierModelOverride,
@@ -1036,7 +1073,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     }
   }
   const baselineApplied = !!baseline && baseline.applied;
-  const recordedOriginalModel =
+  let recordedOriginalModel: string | null =
     routing.routed || baselineApplied ? originalModel : null;
   const shadowModel = routing.shadow_model;
 
@@ -1051,7 +1088,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   //     bucket is `${task_type}:${complexity}` of the resolved bucket
   //     the recommendation came from.
   // Both null when nothing rewrote body.model.
-  const routingReason: string | null = routing.routed
+  let routingReason: string | null = routing.routed
     ? `rule:${routing.rule_id}:from=${routing.from_model}:to=${routing.to_model}`
     : baseline && baseline.applied
       ? baseline.reason
@@ -1064,7 +1101,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
         // just describing the skip rather than the route taken.
         ? baseline.reason
         : null;
-  const routingBucket: string | null =
+  let routingBucket: string | null =
     baseline && baseline.applied
       ? `${baseline.task_type}:${baseline.complexity}`
       : null;
@@ -1073,8 +1110,10 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
   // Must run AFTER semantic routing in case the new model lives on a
   // different provider than the original. Tries the user's BYO key first,
   // then falls back to gateway-env-configured credentials.
-  const resolved = await resolveProvider(apiKey.project_user_id, body.model);
+  let resolved = await resolveProvider(apiKey.project_user_id, body.model);
   if (!resolved.ok) {
+    const resolveFailureReason = resolved.reason;
+    const resolveFailureProvider = resolved.providerName ?? null;
     // L5: record the rejection so operators can see which unsupported
     // models users are asking for. Aggregate upsert keyed by
     // (model, reason, project) — heavy hitters just bump a counter.
@@ -1083,12 +1122,12 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     // union for TS; runtime shape is the same.
     recordModelRejection({
       model: body.model,
-      reason: resolved.reason as "no_template" | "no_credentials",
-      providerGuess: resolved.providerName ?? null,
+      reason: resolveFailureReason as "no_template" | "no_credentials",
+      providerGuess: resolveFailureProvider,
       projectId: apiKey.project_id,
     }).catch((err) =>
       console.warn(
-        `[chat] recordModelRejection failed for '${body.model}' (${resolved.reason}): ${(err as Error).message}`
+        `[chat] recordModelRejection failed for '${body.model}' (${resolveFailureReason}): ${(err as Error).message}`
       )
     );
 
@@ -1103,9 +1142,9 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     // a descriptive `error` text so operators can sort/filter by
     // reason in the per-row view.
     const failureReason =
-      resolved.reason === "no_template"
+      resolveFailureReason === "no_template"
         ? `no_provider_for_model: '${body.model}'`
-        : `no_credentials_for_provider: ${resolved.providerName ?? "unknown"}`;
+        : `no_credentials_for_provider: ${resolveFailureProvider ?? "unknown"}`;
     const resolveFailRecord: InsertRequest = {
       project_id: apiKey.project_id,
       api_key_id: apiKey.id,
@@ -1113,7 +1152,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
       // to — `unknown` is the natural placeholder so the dashboard
       // doesn't show a misleading provider badge. For no_credentials
       // we know exactly which template matched; use it.
-      provider: resolved.providerName ?? "unknown",
+      provider: resolveFailureProvider ?? "unknown",
       model: body.model,
       input_tokens: 0,
       cached_input_tokens: 0,
@@ -1147,7 +1186,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
       costMicroCents: 0,
       costSavedVsAskedMicroCents: 0,
     });
-    if (resolved.reason === "no_template") {
+    if (resolveFailureReason === "no_template") {
       return c.json(
         {
           error: {
@@ -1163,17 +1202,63 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
       {
         error: {
           message:
-            `No credentials configured for ${resolved.providerName} (model '${body.model}'). ` +
+            `No credentials configured for ${resolveFailureProvider} (model '${body.model}'). ` +
             (apiKey.project_user_id
-              ? `Add a ${resolved.providerName} key in the dashboard under Settings → Provider keys, or `
+              ? `Add a ${resolveFailureProvider} key in the dashboard under Settings → Provider keys, or `
               : "") +
-            `set ${resolved.providerName?.toUpperCase()}_API_KEY in this gateway's env. Currently env-configured: ${envAvailable}.`,
+            `set ${resolveFailureProvider?.toUpperCase()}_API_KEY in this gateway's env. Currently env-configured: ${envAvailable}.`,
           type: "no_credentials_for_provider",
         },
       },
       400
     );
   }
+  if (resolved.ok && baselineApplied) {
+    const candidateModel = String(body.model);
+    const cacheAware = evaluateCacheAwareRouting({
+      projectId: apiKey.project_id,
+      sessionId,
+      body,
+      candidateModel,
+      candidateProvider: resolved.config.name,
+      automaticRouting: true,
+    });
+    stampCacheAwareRoutingTags(tags, cacheAware);
+    if (cacheAware.action === "stay") {
+      const previousResolved = await resolveProvider(
+        apiKey.project_user_id,
+        cacheAware.finalModel
+      );
+      if (previousResolved.ok) {
+        body.model = cacheAware.finalModel;
+        resolved = previousResolved;
+        if (body.model === originalModel) {
+          recordedOriginalModel = null;
+          routingBucket = null;
+        }
+        routingReason = `${routingReason ?? "baseline"};cache_aware_stayed:previous=${cacheAware.previousModel}:candidate=${candidateModel}:reason=${cacheAware.reason}`;
+        console.log(
+          `[tokensmart] cache-aware routing kept ${cacheAware.previousModel} over ${candidateModel} ` +
+            `(stay=${cacheAware.stayCostMicroCents} micro_cents switch=${cacheAware.switchCostMicroCents} micro_cents warm_prefix=${cacheAware.warmPrefixTokens})`
+        );
+      } else {
+        tags.cache_aware_routing = "stay_unavailable";
+        tags.cache_aware_reason = previousResolved.reason;
+      }
+    } else if (cacheAware.action === "switch") {
+      routingReason = `${routingReason ?? "baseline"};cache_aware_switched:previous=${cacheAware.previousModel ?? "unknown"}:candidate=${candidateModel}:reason=${cacheAware.reason}`;
+    }
+  }
+
+  // Snapshot only when a shadow request will be dispatched. The old code
+  // deep-cloned every request before routing; for long-context agents without
+  // shadow rules that was pure CPU and memory churn on the hot path. We still
+  // clone before cache_control/failover mutate `body`, so shadow sees the same
+  // prompt shape the primary route selected.
+  const shadowBodySnapshot: OpenAIChatRequest | null = shadowModel
+    ? structuredClone(body)
+    : null;
+
   const providerCfg = resolved.config;
   const provider = providerCfg.name;
   let budgetReservationIds: string[] = [];
@@ -1529,6 +1614,15 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
     }).catch((e) =>
       console.error("Failed to insert cache-served request:", e)
     );
+    recordSessionRouteState({
+      projectId: apiKey.project_id,
+      sessionId,
+      turnId,
+      landedModel: body.model,
+      provider,
+      inputTokens: cacheLookup.inputTokens,
+      cachedInputTokens: cacheLookup.cachedInputTokens,
+    });
     await releaseReservedBudget();
     // Cost is zero because the cached response was served without an
     // upstream call. The "saved vs asked" header stays at zero too —
@@ -1791,6 +1885,17 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
             )
           );
         }
+        if (status === "success") {
+          recordSessionRouteState({
+            projectId: apiKey.project_id,
+            sessionId,
+            turnId,
+            landedModel: effectiveModel,
+            provider: effectiveProvider,
+            inputTokens: final.inputTokens,
+            cachedInputTokens: final.cachedInputTokens,
+          });
+        }
 
         recordSpan({
           traceId,
@@ -1834,7 +1939,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
             primaryCostMicroCents: costMicroCents,
             primaryLatencyMs: totalLatency,
             shadowModel,
-            body: bodySnapshot,
+            body: shadowBodySnapshot ?? body,
           });
         }
         } finally {
@@ -2092,6 +2197,17 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
       )
     );
   }
+  if (record.status === "success") {
+    recordSessionRouteState({
+      projectId: apiKey.project_id,
+      sessionId,
+      turnId,
+      landedModel: effectiveModel,
+      provider: effectiveProvider,
+      inputTokens: result.inputTokens,
+      cachedInputTokens: result.cachedInputTokens,
+    });
+  }
   await releaseReservedBudget();
 
   // OTel: one span per request. The dashboard request-detail URL is the
@@ -2157,7 +2273,7 @@ chatRoutes.post("/v1/chat/completions", async (c) => {
       primaryCostMicroCents: costMicroCents,
       primaryLatencyMs: totalLatency,
       shadowModel,
-      body: bodySnapshot,
+      body: shadowBodySnapshot ?? body,
       // Pass the primary response so the shadow path can embed both and
       // record similarity. Streaming branch passes nothing — we don't keep
       // the full text there.

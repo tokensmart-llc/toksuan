@@ -13,8 +13,8 @@
  *     Postgres later (the API surface is intentionally transport-free
  *     so swapping the store doesn't ripple into chat.ts).
  *   - Two layers: exact (cheap, dominant signal) → similarity (only when
- *     enabled AND exact missed). Similarity layer reuses the existing
- *     embedding infrastructure from `quality.ts`.
+ *     enabled AND exact missed). Similarity stores prompt embeddings at
+ *     write time; lookup embeds the current prompt once and compares locally.
  *   - Cache keys are scoped by project_id so tenants never see each
  *     other's cached responses (defense-in-depth: even if the LRU were
  *     accidentally shared, the key namespace prevents cross-tenant
@@ -51,7 +51,7 @@
 import { createHash } from "node:crypto";
 import { LruTtlCache } from "./lru-ttl-cache";
 import type { OpenAIChatRequest } from "./providers/openai";
-import { computeResponseSimilarity } from "./quality";
+import { cosineSimilarity, embedTexts } from "./quality";
 
 export type CacheLookupHit = {
   hit: true;
@@ -308,14 +308,6 @@ export async function lookupSemanticCache(
     const promptText = promptTextForEmbedding(body);
     if (!promptText) return { hit: false, cacheKey: key, reason: "no_prompt_text" };
 
-    // Trick: re-use computeResponseSimilarity by embedding (promptText, "")
-    // would force a second call per candidate. Instead, embed-then-compare
-    // using the existing quality module by pairing against each candidate
-    // text. To avoid N round-trips, we fall back to a simple heuristic
-    // here — text-near-equality after lowercase + whitespace collapse —
-    // for v1. Real embedding-based similarity needs an embed-once-and-
-    // dot-product implementation we can ship in a follow-up.
-    //
     // The heuristic catches the common case ("hello!" vs "Hello!" vs "hello!  ")
     // without paying the embedding bill. False negatives just fall back
     // to upstream — never to a wrong cached answer.
@@ -330,34 +322,43 @@ export async function lookupSemanticCache(
     const idx = getSimilarityIndex();
     let bestKey: string | null = null;
     let bestScore = 0;
-    for (const [otherKey, otherNorm] of idx.entries()) {
-      if (otherNorm === target) {
+    for (const [otherKey, other] of idx.entries()) {
+      if (other.projectId !== projectId) continue;
+      if (!c.get(otherKey)) {
+        idx.delete(otherKey);
+        continue;
+      }
+      if (other.norm === target) {
         bestKey = otherKey;
         bestScore = 1;
         break;
       }
     }
     // Optional: when the heuristic missed and similarity_threshold < 1,
-    // pay the embedding API cost ONCE (current request) and dot-product
-    // against stored embeddings for true semantic similarity.
+    // pay the embedding API cost ONCE for the current request and compare
+    // against stored prompt embeddings locally. This is intentionally NOT
+    // one embedding call per candidate.
     if (!bestKey && threshold < 1) {
       const candidates: Array<{ key: string; entry: CacheEntry }> = [];
       for (const k of idx.keys()) {
+        const indexed = idx.get(k);
+        if (indexed?.projectId !== projectId) continue;
         const e = c.get(k);
-        if (e && e.promptText) candidates.push({ key: k, entry: e });
+        if (!e) {
+          idx.delete(k);
+          continue;
+        }
+        if (e && e.embedding.length > 0) candidates.push({ key: k, entry: e });
       }
       if (candidates.length > 0) {
-        // Reuse computeResponseSimilarity on prompt pairs. This is wasteful
-        // (one embedding pair-call per candidate), but it means the similarity
-        // layer actually works before we add first-class stored embeddings.
-        for (const cand of candidates) {
-          const sim = await computeResponseSimilarity(
-            promptText,
-            cand.entry.promptText
-          );
-          if (sim != null && sim >= threshold && sim > bestScore) {
-            bestScore = sim;
-            bestKey = cand.key;
+        const currentEmbedding = (await embedTexts([promptText]))?.[0] ?? null;
+        if (currentEmbedding) {
+          for (const cand of candidates) {
+            const sim = cosineSimilarity(currentEmbedding, cand.entry.embedding);
+            if (sim >= threshold && sim > bestScore) {
+              bestScore = sim;
+              bestKey = cand.key;
+            }
           }
         }
       }
@@ -388,12 +389,21 @@ export async function lookupSemanticCache(
   }
 }
 
-// Sidecar normalized-text index used by the similarity heuristic. Same
-// lifetime + eviction as the LRU itself — when an entry expires from
-// the LRU on a `get()`, we lazily prune the sidecar via `forget()`.
-const similarityIndex = new Map<string, string>();
-function getSimilarityIndex(): Map<string, string> {
+// Sidecar normalized-text index used by the similarity heuristic. We prune
+// stale keys opportunistically during lookup and keep it size-capped after
+// writes so it doesn't outgrow the LRU when cache entries are evicted.
+type SimilarityIndexEntry = { projectId: string; norm: string };
+const similarityIndex = new Map<string, SimilarityIndexEntry>();
+function getSimilarityIndex(): Map<string, SimilarityIndexEntry> {
   return similarityIndex;
+}
+
+function pruneSimilarityIndexToCacheSize(c: LruTtlCache<CacheEntry>): void {
+  while (similarityIndex.size > c.size) {
+    const oldest = similarityIndex.keys().next().value;
+    if (oldest === undefined) break;
+    similarityIndex.delete(oldest);
+  }
 }
 
 /**
@@ -412,25 +422,30 @@ export async function storeInSemanticCache(args: {
     const c = getCache();
     if (!c) return;
     const tokens = tokensFromResponse(args.responseBody);
-    const promptText =
-      similarityThreshold() > 0 ? promptTextForEmbedding(args.body) : "";
+    const threshold = similarityThreshold();
+    const promptText = threshold > 0 ? promptTextForEmbedding(args.body) : "";
+    const embedding =
+      promptText && threshold < 1
+        ? ((await embedTexts([promptText]))?.[0] ?? [])
+        : [];
     const entry: CacheEntry = {
       responseBody: args.responseBody,
       inputTokens: tokens.inputTokens,
       outputTokens: tokens.outputTokens,
       cachedInputTokens: tokens.cachedInputTokens,
       promptText,
-      // Embedding storage skipped here — similarity lookup computes prompt
-      // pairs lazily. Future improvement: pre-embed at store time +
-      // dot-product on lookup.
-      embedding: [],
+      embedding,
     };
     c.set(args.cacheKey, entry);
     if (promptText) {
       similarityIndex.set(
         args.cacheKey,
-        promptText.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 2000)
+        {
+          projectId: args.projectId,
+          norm: promptText.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 2000),
+        }
       );
+      pruneSimilarityIndexToCacheSize(c);
     }
   } catch (err) {
     console.warn(

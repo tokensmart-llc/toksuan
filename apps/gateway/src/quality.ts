@@ -116,7 +116,7 @@ export function extractResponseText(body: unknown): string {
   return "";
 }
 
-function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0;
   let na = 0;
@@ -132,6 +132,73 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
+ * Embed one or more strings in a single OpenAI-compatible batch call.
+ * Returns null on any failure mode (no config, network error, malformed
+ * response).
+ *
+ * INDEX ALIGNMENT CONTRACT: the returned array is 1:1 with `texts` —
+ * `result[i]` is the embedding of `texts[i]`. Empty/whitespace-only inputs
+ * are NOT sent to the API (they have no meaningful embedding) and come back
+ * as an empty `[]` placeholder so callers can keep indexing by position
+ * without silently shifting. Returns null only when there is nothing
+ * embeddable at all OR the upstream call/response failed.
+ */
+export async function embedTexts(texts: string[]): Promise<number[][] | null> {
+  const truncated = texts.map((t) => t.slice(0, MAX_INPUT_CHARS));
+  // Indices we actually send to the API. Skip empty / whitespace-only inputs:
+  // they have no meaningful embedding and some providers reject blank input.
+  const sendIndices: number[] = [];
+  const toSend: string[] = [];
+  truncated.forEach((t, i) => {
+    if (t.trim().length > 0) {
+      sendIndices.push(i);
+      toSend.push(t);
+    }
+  });
+  if (toSend.length === 0) return null;
+
+  const cfg = getEmbedConfig();
+  if (!cfg) return null;
+
+  try {
+    const res = await fetch(`${cfg.baseUrl}/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body: JSON.stringify({ model: cfg.model, input: toSend }),
+    });
+    if (!res.ok) {
+      console.warn(`[quality] embed HTTP ${res.status}`);
+      return null;
+    }
+    const json = (await res.json()) as {
+      data?: Array<{ embedding?: number[] }>;
+    };
+    const returned = json.data?.map((d) => d.embedding).filter((v): v is number[] =>
+      Array.isArray(v)
+    );
+    if (!returned || returned.length !== toSend.length) {
+      console.warn("[quality] embed response missing embeddings");
+      return null;
+    }
+    // Re-expand to the original positions: empty inputs become `[]`.
+    const aligned: number[][] = texts.map(() => []);
+    sendIndices.forEach((originalIndex, k) => {
+      aligned[originalIndex] = returned[k];
+    });
+    return aligned;
+  } catch (err) {
+    console.warn(
+      "[quality] embed call failed:",
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
  * Embed two strings in a single OpenAI-compat batch call and return the
  * cosine similarity. Returns null on any failure mode (no config, empty
  * input, network error, malformed response).
@@ -143,47 +210,14 @@ export async function computeResponseSimilarity(
   if (!primaryText || !shadowText) return null;
   if (primaryText === shadowText) return 1.0; // skip the API call
 
-  const cfg = getEmbedConfig();
-  if (!cfg) return null;
-
-  const inputs = [
-    primaryText.slice(0, MAX_INPUT_CHARS),
-    shadowText.slice(0, MAX_INPUT_CHARS),
-  ];
-
-  try {
-    const res = await fetch(`${cfg.baseUrl}/embeddings`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({ model: cfg.model, input: inputs }),
-    });
-    if (!res.ok) {
-      console.warn(`[quality] embed HTTP ${res.status}`);
-      return null;
-    }
-    const json = (await res.json()) as {
-      data?: Array<{ embedding: number[] }>;
-    };
-    const a = json.data?.[0]?.embedding;
-    const b = json.data?.[1]?.embedding;
-    if (!a || !b) {
-      console.warn("[quality] embed response missing embeddings");
-      return null;
-    }
-    const sim = cosineSimilarity(a, b);
-    // Clamp to [-1, 1] to satisfy the DB CHECK constraint even in the face
-    // of floating-point edge cases.
-    return Math.max(-1, Math.min(1, sim));
-  } catch (err) {
-    console.warn(
-      "[quality] embed call failed:",
-      err instanceof Error ? err.message : err
-    );
-    return null;
-  }
+  const embeddings = await embedTexts([primaryText, shadowText]);
+  const a = embeddings?.[0];
+  const b = embeddings?.[1];
+  if (!a || !b) return null;
+  const sim = cosineSimilarity(a, b);
+  // Clamp to [-1, 1] to satisfy the DB CHECK constraint even in the face
+  // of floating-point edge cases.
+  return Math.max(-1, Math.min(1, sim));
 }
 
 /** Test-only export. */

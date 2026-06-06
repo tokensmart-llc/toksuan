@@ -108,6 +108,23 @@ function estimateOutputTokens(body: OpenAIChatRequest): number {
   return perChoice * n;
 }
 
+export function estimateChatTokenUsage(body: OpenAIChatRequest): {
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+} {
+  const promptShape = {
+    messages: body.messages,
+    tools: body.tools,
+    tool_choice: body.tool_choice,
+    response_format: body.response_format,
+    parallel_tool_calls: body.parallel_tool_calls,
+  };
+  return {
+    estimated_input_tokens: estimateTokensFromValue(promptShape),
+    estimated_output_tokens: estimateOutputTokens(body),
+  };
+}
+
 export function estimateChatCostMicroCents(
   provider: ProviderName | null,
   model: string,
@@ -118,15 +135,10 @@ export function estimateChatCostMicroCents(
   estimated_micro_cents: number;
   pricing_basis: ReservationPricingBasis;
 } {
-  const promptShape = {
-    messages: body.messages,
-    tools: body.tools,
-    tool_choice: body.tool_choice,
-    response_format: body.response_format,
-    parallel_tool_calls: body.parallel_tool_calls,
-  };
-  const estimatedInputTokens = estimateTokensFromValue(promptShape);
-  const estimatedOutputTokens = estimateOutputTokens(body);
+  const {
+    estimated_input_tokens: estimatedInputTokens,
+    estimated_output_tokens: estimatedOutputTokens,
+  } = estimateChatTokenUsage(body);
   const reservation = estimateMicroCentsForReservation(
     provider,
     model,

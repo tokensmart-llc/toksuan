@@ -84,6 +84,12 @@ const API_KEY_NULL_TTL_MS = 10_000;
 const API_KEY_CACHE_MAX = 1024;
 const PROJECT_PLAN_CACHE_TTL_MS = 60_000;
 const PROJECT_PLAN_CACHE_MAX = 1024;
+const ROUTING_RULES_CACHE_TTL_MS = 10_000;
+const ROUTING_RULES_CACHE_MAX = 1024;
+const USER_PROVIDER_KEY_CACHE_TTL_MS = 60_000;
+const USER_PROVIDER_KEY_CACHE_MAX = 4096;
+const USER_CUSTOM_PROVIDERS_CACHE_TTL_MS = 60_000;
+const USER_CUSTOM_PROVIDERS_CACHE_MAX = 1024;
 
 type CacheEntry<T> = { value: T; expiresAtMs: number };
 
@@ -135,6 +141,15 @@ const projectPlanCache = new TtlLru<
   string,
   { user_id: string; plan: string } | null
 >(PROJECT_PLAN_CACHE_MAX);
+const routingRulesCache = new TtlLru<string, RoutingRule[]>(
+  ROUTING_RULES_CACHE_MAX
+);
+const userProviderKeyCache = new TtlLru<string, StoredProviderKey | null>(
+  USER_PROVIDER_KEY_CACHE_MAX
+);
+const userCustomProvidersCache = new TtlLru<string, StoredCustomProvider[]>(
+  USER_CUSTOM_PROVIDERS_CACHE_MAX
+);
 
 /**
  * Test-only escape hatch. Production code never imports this — the TTL
@@ -143,6 +158,9 @@ const projectPlanCache = new TtlLru<
 export function _resetHotPathCachesForTests(): void {
   apiKeyCache.clear();
   projectPlanCache.clear();
+  routingRulesCache.clear();
+  userProviderKeyCache.clear();
+  userCustomProvidersCache.clear();
 }
 
 export type RequestStatus =
@@ -315,13 +333,23 @@ export async function getUserProviderKey(
   userId: string,
   provider: string
 ): Promise<StoredProviderKey | null> {
+  const cacheKey = `${userId}:${provider}`;
+  const cached = userProviderKeyCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const rows = await sql<StoredProviderKey[]>`
     SELECT id, encrypted_key, base_url, master_key_fingerprint
       FROM user_provider_keys
      WHERE user_id = ${userId} AND provider = ${provider}
      LIMIT 1
   `;
-  return rows[0] ?? null;
+  const row = rows[0] ?? null;
+  userProviderKeyCache.set(
+    cacheKey,
+    row,
+    row ? USER_PROVIDER_KEY_CACHE_TTL_MS : API_KEY_NULL_TTL_MS
+  );
+  return row;
 }
 
 /**
@@ -370,6 +398,9 @@ export type StoredCustomProvider = {
 export async function listUserCustomProviders(
   userId: string
 ): Promise<StoredCustomProvider[]> {
+  const cached = userCustomProvidersCache.get(userId);
+  if (cached !== undefined) return cached;
+
   const rows = await sql<StoredCustomProvider[]>`
     SELECT id, user_id, name, base_url, model_prefix,
            encrypted_key, master_key_fingerprint, wire_format, enabled
@@ -377,6 +408,13 @@ export async function listUserCustomProviders(
     WHERE user_id = ${userId} AND enabled = TRUE
     ORDER BY length(model_prefix) DESC, name ASC
   `;
+  userCustomProvidersCache.set(
+    userId,
+    rows,
+    rows.length > 0
+      ? USER_CUSTOM_PROVIDERS_CACHE_TTL_MS
+      : API_KEY_NULL_TTL_MS
+  );
   return rows;
 }
 
@@ -1092,7 +1130,10 @@ export type RoutingRule = {
 };
 
 export async function getRoutingRules(projectId: string): Promise<RoutingRule[]> {
-  return sql<RoutingRule[]>`
+  const cached = routingRulesCache.get(projectId);
+  if (cached !== undefined) return cached;
+
+  const rows = await sql<RoutingRule[]>`
     SELECT id, project_id, enabled, threshold, from_pattern, to_model,
            shadow_to_model, mode, sample_rate
     FROM routing_rules
@@ -1100,6 +1141,8 @@ export async function getRoutingRules(projectId: string): Promise<RoutingRule[]>
       AND enabled = TRUE
     ORDER BY created_at ASC
   `;
+  routingRulesCache.set(projectId, rows, ROUTING_RULES_CACHE_TTL_MS);
+  return rows;
 }
 
 // --- A/B shadow results ---------------------------------------------------
