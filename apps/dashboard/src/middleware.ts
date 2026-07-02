@@ -21,6 +21,7 @@ const SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 // marketing/proof surfaces (`/estimate`, `/trust`, `/state-of-agent-spend`,
 // `/routing-quality`) need to be reachable before signup.
 const PUBLIC_PREFIXES = [
+  "/health",
   "/login",
   "/logout",
   "/api/stripe/webhook",
