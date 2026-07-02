@@ -23,17 +23,21 @@ export const healthRoutes = new Hono();
  * configured for openai" — never the actual key material).
  *
  * Caching: dashboard polls this on /settings page render. We don't bother
- * caching server-side; the queries are constant-time / pure-env reads
- * except for the DB ping, which Postgres handles fine at any rate.
+ * caching server-side; the checks are constant-time / pure-env reads unless
+ * TOKENSMART_HEALTH_DB_PING=1 explicitly enables the DB probe.
  */
 healthRoutes.get("/health", async (c) => {
-  // 1. DB ping — required for the basic ok=true gate.
-  let dbOk = false;
-  try {
-    await sql`SELECT 1`;
-    dbOk = true;
-  } catch {
-    dbOk = false;
+  // Health checks can run forever while there is no user traffic. Keep the
+  // default probe DB-free so autosuspend-capable Postgres can sleep.
+  const dbPingEnabled = process.env.TOKENSMART_HEALTH_DB_PING === "1";
+  let dbStatus: "up" | "down" | "not_checked" = "not_checked";
+  if (dbPingEnabled) {
+    try {
+      await sql`SELECT 1`;
+      dbStatus = "up";
+    } catch {
+      dbStatus = "down";
+    }
   }
 
   // 2. Cross-provider failover map — env-driven, may be empty.
@@ -269,9 +273,9 @@ healthRoutes.get("/health", async (c) => {
   }
 
   return c.json({
-    ok: dbOk,
+    ok: dbStatus !== "down",
     version: "0.0.1",
-    db: dbOk ? "up" : "down",
+    db: dbStatus,
     backend: dbBackend,
     integrations: {
       failover,

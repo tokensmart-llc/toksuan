@@ -220,7 +220,9 @@ loadEmbeddingClassifier();
 // when the classifier itself is disabled. File watcher never throws;
 // LISTEN failure degrades to file-watch-only.
 startEmbeddingClassifierFileWatcher();
-if (dbBackend === "postgres") {
+const postgresListenEnabled =
+  process.env.TOKENSMART_POSTGRES_LISTEN_ENABLED === "1";
+if (dbBackend === "postgres" && postgresListenEnabled) {
   // Baseline policy reload notifications. Policy generators send one
   // automatically when it has DB access; operators can also fire it
   // manually via `psql -c "SELECT pg_notify('tokensmart_baseline_reload', '')"`.
@@ -245,17 +247,23 @@ if (dbBackend === "postgres") {
       `[bootstrap] per-project embedding-classifier LISTEN subscribe failed: ${err instanceof Error ? err.message : String(err)} — continuing without it`
     );
   });
+} else if (dbBackend === "postgres") {
+  console.log(
+    "[bootstrap] Postgres LISTEN subscribers disabled (set TOKENSMART_POSTGRES_LISTEN_ENABLED=1 to enable)."
+  );
 }
 
 // Cross-replica policy cache invalidation: subscribe to Postgres
 // LISTEN/NOTIFY so a retrain on any replica drops THIS replica's
 // cached entry within milliseconds, instead of waiting out the 60s
 // loader TTL. Failure is non-fatal (degrades to TTL-only).
-await subscribeToPolicyInvalidations().catch((err: unknown) => {
-  console.warn(
-    `[bootstrap] policy invalidation subscribe failed: ${err instanceof Error ? err.message : String(err)} — continuing without it`
-  );
-});
+if (postgresListenEnabled) {
+  await subscribeToPolicyInvalidations().catch((err: unknown) => {
+    console.warn(
+      `[bootstrap] policy invalidation subscribe failed: ${err instanceof Error ? err.message : String(err)} — continuing without it`
+    );
+  });
+}
 
 // OTel tracing — no-op when OTEL_EXPORTER_OTLP_ENDPOINT isn't set, so
 // self-hosted single-tenant installs pay zero cost.

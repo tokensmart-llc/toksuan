@@ -85,6 +85,13 @@ async function runOnce(): Promise<void> {
 export function startCostAnomalyMonitor(): void {
   if (timer) return;
 
+  if (process.env.TOKENSMART_ANOMALY_MONITOR_ENABLED !== "1") {
+    console.log(
+      "[anomaly-monitor] disabled (set TOKENSMART_ANOMALY_MONITOR_ENABLED=1 to enable)."
+    );
+    return;
+  }
+
   // SQLite single-binary trial doesn't ship the cost-anomaly query path
   // (it's z-score over hourly buckets — the SQL uses Postgres-only
   // window/lateral patterns we deliberately didn't translate). The

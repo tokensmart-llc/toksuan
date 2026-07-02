@@ -28,6 +28,6 @@ COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=3s --retries=4 \
-  CMD wget -q -O /dev/null http://localhost:3000/ || exit 1
+  CMD wget -q -O /dev/null http://localhost:3000/health || exit 1
 
 CMD ["bun", "server.js"]
