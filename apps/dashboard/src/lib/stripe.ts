@@ -250,12 +250,37 @@ export async function annotateInvoiceWithSavings(
 export async function syncSubscriptionToUser(
   subscription: Stripe.Subscription
 ): Promise<void> {
-  const userId =
-    (subscription.metadata.tokensmart_user_id as string | undefined) ?? null;
+  // Always act on the LIVE subscription, never the event's snapshot.
+  //
+  // Stripe resends the ORIGINAL payload on manual "Resend" / automatic
+  // retries, and can deliver customer.subscription.* events out of order.
+  // Both cases can carry a stale `incomplete` / `past_due` status from
+  // creation time that would otherwise clobber an already-active
+  // subscription back down to `free`. Re-fetching by id makes this handler
+  // idempotent and order-independent: whatever order the events arrive in,
+  // we resolve to the subscription's current truth. Falls back to the event
+  // payload if the fetch fails so a transient Stripe outage never drops the
+  // update entirely.
+  let sub = subscription;
+  const stripe = stripeClient();
+  if (stripe && subscription.id) {
+    try {
+      sub = await stripe.subscriptions.retrieve(subscription.id);
+    } catch (e) {
+      console.warn(
+        `[stripe] syncSubscriptionToUser could not re-fetch ${subscription.id}; using event payload:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
+  // Prefer the freshly-fetched metadata; fall back to the event's copy.
+  const metadata = { ...subscription.metadata, ...sub.metadata };
+  const userId = (metadata.tokensmart_user_id as string | undefined) ?? null;
   if (!userId) return;
 
-  const metaPlan = subscription.metadata.tokensmart_plan as PlanId | undefined;
-  const priceId = subscription.items.data[0]?.price.id;
+  const metaPlan = metadata.tokensmart_plan as PlanId | undefined;
+  const priceId = sub.items.data[0]?.price.id;
   let plan: PlanId = metaPlan ?? "free";
   if (!metaPlan && priceId) {
     // Match against both monthly + annual price IDs for each tier so
@@ -277,14 +302,13 @@ export async function syncSubscriptionToUser(
       plan = "scale";
   }
 
-  const active =
-    subscription.status === "active" || subscription.status === "trialing";
+  const active = sub.status === "active" || sub.status === "trialing";
   const effectivePlan: PlanId = active ? plan : "free";
 
   await sql`
     UPDATE users
        SET plan = ${effectivePlan},
-           stripe_subscription_id = ${active ? subscription.id : null}
+           stripe_subscription_id = ${active ? sub.id : null}
      WHERE id = ${userId}
   `;
 
