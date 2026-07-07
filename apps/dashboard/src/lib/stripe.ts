@@ -114,6 +114,15 @@ export async function createCheckoutSession(args: {
     client_reference_id: args.user.id,
     line_items: [{ price: priceId, quantity: 1 }],
     allow_promotion_codes: true,
+    // Stripe Tax: compute + collect sales tax from the customer's billing
+    // address. Requires an active tax registration for the jurisdiction
+    // (e.g. Washington) plus a tax code + tax_behavior on each price. We
+    // force a full billing address at checkout and write it back to the
+    // Customer (customer_update.address) so the tax engine has a location
+    // and every recurring subscription invoice reuses it.
+    automatic_tax: { enabled: true },
+    billing_address_collection: "required",
+    customer_update: { address: "auto" },
     success_url: `${baseUrl()}/billing?status=success`,
     cancel_url: `${baseUrl()}/billing?status=cancel`,
     metadata: {
